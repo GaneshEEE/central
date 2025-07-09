@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: confluence-ai-assistant
+    env: python
+    buildCommand: |
+      cd UI-main/backend
+      pip install -r requirements.txt
+    startCommand: |
+      cd UI-main/backend
+      uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GENAI_API_KEY_1
+        sync: false
+      - key: CONFLUENCE_BASE_URL
+        sync: false
+      - key: CONFLUENCE_USER_EMAIL
+        sync: false
+      - key: CONFLUENCE_API_KEY
+        sync: false 

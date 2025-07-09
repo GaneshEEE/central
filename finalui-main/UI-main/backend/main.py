@@ -33,7 +33,7 @@ app.add_middleware(
         "http://localhost:5173", 
         "http://127.0.0.1:5173",
         "https://central-1rua.onrender.com",  # Add your Render URL
-        "https://frontend-gwj0.onrender.com",  # Add frontend domain
+        "https://central-frontend-gbvy.onrender.com",  # Add frontend domain
         "*"  # For development, you can allow all origins
     ],
     allow_credentials=True,

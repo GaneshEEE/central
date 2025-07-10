@@ -281,12 +281,13 @@ async def ai_powered_search(request: SearchRequest, req: Request):
         
         response = ai_model.generate_content(prompt)
         ai_response = response.text.strip()
-        grounding = "Grounding: This answer is based on the provided Confluence page content."
+        page_titles = [p["title"] for p in selected_pages]
+        grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         
         return {
             "response": f"{ai_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),
-            "page_titles": [p["title"] for p in selected_pages],
+            "page_titles": page_titles,
             "grounding": grounding
         }
         
@@ -402,7 +403,7 @@ async def video_summarizer(request: VideoRequest, req: Request):
                 f"Provide a detailed answer based on the video content."
             )
             qa_response = ai_model.generate_content(qa_prompt)
-            grounding = "Grounding: This answer is based on the provided video transcript."
+            grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
             return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
@@ -527,7 +528,7 @@ async def code_assistant(request: CodeRequest, req: Request):
             lang_response = ai_model.generate_content(convert_prompt)
             converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
         
-        grounding = "Grounding: This answer is based on the provided code/content."
+        grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
             "summary": f"{summary}\n\n{grounding}",
             "original_code": cleaned_code,
@@ -673,7 +674,7 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
 
         # Q&A if question provided
         qa_answer = None
-        grounding = "Grounding: This answer is based on the provided document/code diff."
+        grounding = f"This answer is based on the diff between Confluence pages: {request.old_page_title} and {request.new_page_title}."
         if request.question:
             context = (
                 f"Summary: {impact_text[:1000]}\n"
@@ -878,7 +879,7 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
         
         # Q&A if question provided
         ai_response = None
-        grounding = "Grounding: This answer is based on the provided code/content."
+        grounding = f"This answer is based on the code/content from the Confluence page: {request.code_page_title}."
         if request.question:
             context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
             if sensitivity_text:

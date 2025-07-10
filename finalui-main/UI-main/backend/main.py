@@ -55,11 +55,6 @@ class SearchRequest(BaseModel):
     page_titles: List[str]
     query: str
 
-class GroundedAnswerRequest(BaseModel):
-    space_key: str
-    page_titles: List[str]
-    question: str
-
 class VideoRequest(BaseModel):
     video_url: Optional[str] = None
     space_key: str
@@ -295,57 +290,6 @@ async def ai_powered_search(request: SearchRequest, req: Request):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-@app.post("/grounded-answer")
-async def grounded_answer(request: GroundedAnswerRequest, req: Request):
-    """
-    Generate an answer strictly grounded in Confluence page content.
-    If no content answers the question, the model will say so.
-    """
-    try:
-        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
-        genai.configure(api_key=api_key)
-        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
-
-        confluence = init_confluence()
-        space_key = auto_detect_space(confluence, request.space_key)
-
-        # Get selected pages
-        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
-        selected_pages = [p for p in pages if p["title"] in request.page_titles]
-
-        if not selected_pages:
-            raise HTTPException(status_code=404, detail="Selected pages not found.")
-
-        # Collect content
-        full_context = ""
-        for page in selected_pages:
-            page_data = confluence.get_page_by_id(page["id"], expand="body.storage")
-            raw_html = page_data["body"]["storage"]["value"]
-            text = clean_html(raw_html)
-            full_context += f"\n\n---\nTitle: {page['title']}\n{text}"
-
-        # Prompt with strict grounding
-        prompt = (
-            f"Use only the following content to answer the question.\n"
-            f"If the answer is not present, respond: 'Answer not found in the provided documents.'\n"
-            f"\nContext:\n{full_context[:12000]}\n\n"
-            f"Question: {request.question}"
-        )
-
-        response = ai_model.generate_content(prompt)
-
-        return {
-            "answer": response.text.strip(),
-            "grounding": {
-                "source_pages": [p["title"] for p in selected_pages],
-                "strict_grounding": True
-            }
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/video-summarizer")
 async def video_summarizer(request: VideoRequest, req: Request):

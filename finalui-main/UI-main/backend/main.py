@@ -281,13 +281,11 @@ async def ai_powered_search(request: SearchRequest, req: Request):
         
         response = ai_model.generate_content(prompt)
         ai_response = response.text.strip()
-        rag_response = get_rag_response(request.query, full_context)
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         
         return {
             "response": f"{ai_response}\n\n{grounding}",
-            "rag_response": rag_response,
             "pages_analyzed": len(selected_pages),
             "page_titles": page_titles,
             "grounding": grounding
@@ -405,9 +403,8 @@ async def video_summarizer(request: VideoRequest, req: Request):
                 f"Provide a detailed answer based on the video content."
             )
             qa_response = ai_model.generate_content(qa_prompt)
-            rag_qa = get_rag_response(request.question, transcript_text)
             grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
-            return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "rag_answer": rag_qa, "grounding": grounding}
+            return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
         quote_prompt = (
@@ -426,7 +423,6 @@ async def video_summarizer(request: VideoRequest, req: Request):
             f"Transcript:\n{transcript_text[:3000]}"
         )
         summary = ai_model.generate_content(summary_prompt).text.strip()
-        rag_summary = get_rag_response("Summarize this video transcript:", transcript_text)
         
         # Generate timestamps separately
         timestamp_prompt = (
@@ -442,7 +438,6 @@ async def video_summarizer(request: VideoRequest, req: Request):
         
         return {
             "summary": summary,
-            "rag_summary": rag_summary,
             "quotes": quotes,
             "timestamps": timestamps,
             "qa": [],
@@ -510,7 +505,6 @@ async def code_assistant(request: CodeRequest, req: Request):
         )
         summary_response = ai_model.generate_content(summary_prompt)
         summary = summary_response.text.strip()
-        rag_summary = get_rag_response("Summarize this code:", cleaned_code)
         
         # Modify code if instruction provided
         modified_code = None
@@ -537,7 +531,6 @@ async def code_assistant(request: CodeRequest, req: Request):
         grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
             "summary": f"{summary}\n\n{grounding}",
-            "rag_summary": rag_summary,
             "original_code": cleaned_code,
             "detected_language": detected_lang,
             "modified_code": (f"{modified_code}\n\n{grounding}" if modified_code else None),
@@ -623,7 +616,6 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
         
         impact_response = ai_model.generate_content(impact_prompt)
         impact_text = impact_response.text.strip()
-        rag_impact = get_rag_response("What is the impact of this code diff?", full_diff_text)
         
         # Recommendations
         rec_prompt = f"""As a senior analyst, write 2 paragraphs suggesting improvements for the following changes.
@@ -640,13 +632,11 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
         
         rec_response = ai_model.generate_content(rec_prompt)
         rec_text = rec_response.text.strip()
-        rag_recommendations = get_rag_response("Suggest improvements for this code diff.", full_diff_text)
         
         # Risk analysis
         risk_prompt = f"Assess the risk of each change in this document diff with severity tags (Low, Medium, High):\n\n{safe_diff}"
         risk_response = ai_model.generate_content(risk_prompt)
         raw_risk = risk_response.text.strip()
-        rag_risk = get_rag_response("What are the risks in this code diff?", full_diff_text)
         risk_text = re.sub(
             r'\b(Low|Medium|High)\b',
             lambda m: {
@@ -708,11 +698,8 @@ Answer:"""
             "files_changed": 1,
             "percentage_change": percent_change,
             "impact_analysis": f"{impact_text}\n\n{grounding}",
-            "rag_impact_analysis": rag_impact,
             "recommendations": f"{rec_text}\n\n{grounding}",
-            "rag_recommendations": rag_recommendations,
             "risk_analysis": f"{risk_text}\n\n{grounding}",
-            "rag_risk_analysis": rag_risk,
             "risk_level": "low" if percent_change < 10 else "medium" if percent_change < 30 else "high",
             "risk_score": min(10, max(1, round(percent_change / 10))),
             "risk_factors": risk_factors,
@@ -809,7 +796,6 @@ Please format your response exactly like this structure, using proper markdown h
 
         response_strategy = ai_model.generate_content(prompt_strategy)
         strategy_text = response_strategy.text.strip()
-        rag_strategy = get_rag_response("Write a test strategy for this code:", code_content)
         
         print(f"Strategy generated: {len(strategy_text)} chars")  # Debug log
         
@@ -872,13 +858,11 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
 
         response_cross_platform = ai_model.generate_content(prompt_cross_platform)
         cross_text = response_cross_platform.text.strip()
-        rag_cross = get_rag_response("Write a cross-platform test plan for this code:", code_content)
         
         print(f"Cross-platform generated: {len(cross_text)} chars")  # Debug log
         
         # Sensitivity analysis if test input page provided
         sensitivity_text = None
-        rag_sensitivity = None
         if request.test_input_page_title:
             test_input_page = next((p for p in pages if p["title"] == request.test_input_page_title), None)
             if test_input_page:
@@ -886,9 +870,11 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
                 test_input_content = test_data["body"]["storage"]["value"]
                 
                 prompt_sensitivity = f"""You are a data privacy expert. Classify sensitive fields (PII, credentials, financial) and provide masking suggestions.Also, don't include comments if any code is present.\n\nData:\n{test_input_content[:2000]}"""
+
+
+
                 response_sensitivity = ai_model.generate_content(prompt_sensitivity)
                 sensitivity_text = response_sensitivity.text.strip()
-                rag_sensitivity = get_rag_response("Identify sensitive fields and how to mask them:", test_input_content)
                 print(f"Sensitivity generated: {len(sensitivity_text)} chars")  # Debug log
         
         # Q&A if question provided
@@ -906,11 +892,8 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
         
         result = {
             "test_strategy": f"{strategy_text}\n\n{grounding}",
-            "rag_test_strategy": rag_strategy,
             "cross_platform_testing": f"{cross_text}\n\n{grounding}",
-            "rag_cross_platform_testing": rag_cross,
             "sensitivity_analysis": (f"{sensitivity_text}\n\n{grounding}" if sensitivity_text else None),
-            "rag_sensitivity_analysis": rag_sensitivity,
             "ai_response": ai_response,
             "grounding": grounding
         }

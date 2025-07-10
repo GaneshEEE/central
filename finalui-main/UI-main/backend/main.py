@@ -271,20 +271,24 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             text_content = clean_html(raw_html)
             full_context += f"\n\nTitle: {page['title']}\n{text_content}"
         
-        # RAG-style prompt
+        # Generate AI response
         prompt = (
-            f"Use only the following context to answer the user's question. If the answer is not in the context, say 'Not found in provided context.'\n"
+            f"Answer the following question using the provided Confluence page content as context.\n"
             f"Context:\n{full_context}\n\n"
-            f"Question: {request.query}"
+            f"Question: {request.query}\n"
+            f"Instructions: Begin with the answer based on the context above. Then, if applicable, supplement with general knowledge."
         )
+        
         response = ai_model.generate_content(prompt)
         ai_response = response.text.strip()
         page_titles = [p["title"] for p in selected_pages]
+        grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
+        
         return {
-            "response": ai_response,
+            "response": f"{ai_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),
             "page_titles": page_titles,
-            "context_used": full_context
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -394,12 +398,13 @@ async def video_summarizer(request: VideoRequest, req: Request):
         # Q&A
         if request.question:
             qa_prompt = (
-                f"Use only the following transcript to answer the user's question. If the answer is not in the transcript, say 'Not found in provided context.'\n"
-                f"Transcript:\n{transcript_text[:3000]}\n\n"
-                f"Question: {request.question}"
+                f"Based on the following video transcript, answer this question: {request.question}\n\n"
+                f"Transcript: {transcript_text[:3000]}\n\n"
+                f"Provide a detailed answer based on the video content."
             )
             qa_response = ai_model.generate_content(qa_prompt)
-            return {"answer": qa_response.text.strip(), "context_used": transcript_text[:3000]}
+            grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
+            return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
         quote_prompt = (
@@ -493,42 +498,45 @@ async def code_assistant(request: CodeRequest, req: Request):
         
         detected_lang = detect_language_from_content(cleaned_code)
         
-        # Generate summary (RAG)
+        # Generate summary
         summary_prompt = (
-            f"Use only the following code/content to summarize. If not enough information, say 'Not found in provided context.'\n"
-            f"Code/Content:\n{context}"
+            f"The following is content (possibly code or structure) from a Confluence page:\n\n{context}\n\n"
+            "Summarize in detailed paragraph"
         )
         summary_response = ai_model.generate_content(summary_prompt)
         summary = summary_response.text.strip()
-        # Modify code if instruction provided (RAG)
+        
+        # Modify code if instruction provided
         modified_code = None
         if request.instruction:
             alteration_prompt = (
-                f"Use only the following code to modify as per instruction. If not possible, say 'Not found in provided context.'\n"
-                f"Code:\n{cleaned_code}\n\n"
-                f"Instruction: {request.instruction}\nReturn the modified code only."
+                f"The following is a piece of code extracted from a Confluence page:\n\n{cleaned_code}\n\n"
+                f"Please modify this code according to the following instruction:\n'{request.instruction}'\n\n"
+                "Return the modified code only. No explanation or extra text."
             )
             altered_response = ai_model.generate_content(alteration_prompt)
             modified_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", altered_response.text.strip(), flags=re.MULTILINE)
-        # Convert to another language if requested (RAG)
+        
+        # Convert to another language if requested
         converted_code = None
         if request.target_language and request.target_language != detected_lang:
             input_code = modified_code if modified_code else cleaned_code
             convert_prompt = (
-                f"Use only the following code to convert. If not possible, say 'Not found in provided context.'\n"
-                f"Code:\n{input_code}\n\n"
-                f"Convert to: {request.target_language}"
+                f"The following is a code structure or data snippet:\n\n{input_code}\n\n"
+                f"Convert this into equivalent {request.target_language} code. Only show the converted code."
             )
             lang_response = ai_model.generate_content(convert_prompt)
             converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
+        
+        grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
-            "summary": summary,
+            "summary": f"{summary}\n\n{grounding}",
             "original_code": cleaned_code,
             "detected_language": detected_lang,
-            "modified_code": modified_code,
-            "converted_code": converted_code,
+            "modified_code": (f"{modified_code}\n\n{grounding}" if modified_code else None),
+            "converted_code": (f"{converted_code}\n\n{grounding}" if converted_code else None),
             "target_language": request.target_language,
-            "context_used": context
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -666,7 +674,7 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
 
         # Q&A if question provided
         qa_answer = None
-        context_diff = full_diff_text
+        grounding = f"This answer is based on the diff between Confluence pages: {request.old_page_title} and {request.new_page_title}."
         if request.question:
             context = (
                 f"Summary: {impact_text[:1000]}\n"
@@ -674,25 +682,30 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
                 f"Risks: {risk_text[:1000]}\n"
                 f"Changes: +{lines_added}, -{lines_removed}, ~{percent_change}%"
             )
-            qa_prompt = f"Use only the following diff and analysis to answer the user's question. If not found, say 'Not found in provided context.'\n{context}\n\nDiff:\n{context_diff}\n\nQuestion: {request.question}"
+            qa_prompt = f"""You are an expert AI assistant. Based on the report below, answer the user's question clearly.
+
+{context}
+
+Question: {request.question}
+
+Answer:"""
             qa_response = ai_model.generate_content(qa_prompt)
-            qa_answer = qa_response.text.strip()
-        else:
-            qa_answer = None
+            qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
+        
         return {
             "lines_added": lines_added,
             "lines_removed": lines_removed,
             "files_changed": 1,
             "percentage_change": percent_change,
-            "impact_analysis": impact_text,
-            "recommendations": rec_text,
-            "risk_analysis": risk_text,
+            "impact_analysis": f"{impact_text}\n\n{grounding}",
+            "recommendations": f"{rec_text}\n\n{grounding}",
+            "risk_analysis": f"{risk_text}\n\n{grounding}",
             "risk_level": "low" if percent_change < 10 else "medium" if percent_change < 30 else "high",
             "risk_score": min(10, max(1, round(percent_change / 10))),
             "risk_factors": risk_factors,
             "answer": qa_answer,
             "diff": full_diff_text,
-            "context_used": context_diff
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -866,21 +879,25 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
         
         # Q&A if question provided
         ai_response = None
-        context_used = f"Test Strategy:\n{strategy_text}\n\nCross-Platform Testing:\n{cross_text}"
-        if sensitivity_text:
-            context_used += f"\n\nSensitivity Analysis:\n{sensitivity_text}"
+        grounding = f"This answer is based on the code/content from the Confluence page: {request.code_page_title}."
         if request.question:
-            prompt_chat = f"Use only the following context to answer the user's question. If not found, say 'Not found in provided context.'\n{context_used}\n\nQuestion: {request.question}"
+            context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
+            if sensitivity_text:
+                context += f"\n🔒 Sensitivity Analysis:\n{sensitivity_text}"
+            
+            prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: \"{request.question}\" """
             response_chat = ai_model.generate_content(prompt_chat)
-            ai_response = response_chat.text.strip()
+            ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
+        
         result = {
-            "test_strategy": strategy_text,
-            "cross_platform_testing": cross_text,
-            "sensitivity_analysis": sensitivity_text,
+            "test_strategy": f"{strategy_text}\n\n{grounding}",
+            "cross_platform_testing": f"{cross_text}\n\n{grounding}",
+            "sensitivity_analysis": (f"{sensitivity_text}\n\n{grounding}" if sensitivity_text else None),
             "ai_response": ai_response,
-            "context_used": context_used
+            "grounding": grounding
         }
+        
         print(f"Returning result: {result}")  # Debug log
         return result
         

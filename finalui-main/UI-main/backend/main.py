@@ -281,11 +281,13 @@ async def ai_powered_search(request: SearchRequest, req: Request):
         
         response = ai_model.generate_content(prompt)
         ai_response = response.text.strip()
+        grounding = "Grounding: This answer is based on the provided Confluence page content."
         
         return {
-            "response": ai_response,
+            "response": f"{ai_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),
-            "page_titles": [p["title"] for p in selected_pages]
+            "page_titles": [p["title"] for p in selected_pages],
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -400,7 +402,8 @@ async def video_summarizer(request: VideoRequest, req: Request):
                 f"Provide a detailed answer based on the video content."
             )
             qa_response = ai_model.generate_content(qa_prompt)
-            return {"answer": qa_response.text.strip()}
+            grounding = "Grounding: This answer is based on the provided video transcript."
+            return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
         quote_prompt = (
@@ -524,13 +527,15 @@ async def code_assistant(request: CodeRequest, req: Request):
             lang_response = ai_model.generate_content(convert_prompt)
             converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
         
+        grounding = "Grounding: This answer is based on the provided code/content."
         return {
-            "summary": summary,
+            "summary": f"{summary}\n\n{grounding}",
             "original_code": cleaned_code,
             "detected_language": detected_lang,
-            "modified_code": modified_code,
-            "converted_code": converted_code,
-            "target_language": request.target_language
+            "modified_code": (f"{modified_code}\n\n{grounding}" if modified_code else None),
+            "converted_code": (f"{converted_code}\n\n{grounding}" if converted_code else None),
+            "target_language": request.target_language,
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -668,6 +673,7 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
 
         # Q&A if question provided
         qa_answer = None
+        grounding = "Grounding: This answer is based on the provided document/code diff."
         if request.question:
             context = (
                 f"Summary: {impact_text[:1000]}\n"
@@ -683,22 +689,22 @@ Question: {request.question}
 
 Answer:"""
             qa_response = ai_model.generate_content(qa_prompt)
-            qa_answer = qa_response.text.strip()
-            
+            qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
         
         return {
             "lines_added": lines_added,
             "lines_removed": lines_removed,
             "files_changed": 1,
             "percentage_change": percent_change,
-            "impact_analysis": impact_text,
-            "recommendations": rec_text,
-            "risk_analysis": risk_text,
+            "impact_analysis": f"{impact_text}\n\n{grounding}",
+            "recommendations": f"{rec_text}\n\n{grounding}",
+            "risk_analysis": f"{risk_text}\n\n{grounding}",
             "risk_level": "low" if percent_change < 10 else "medium" if percent_change < 30 else "high",
             "risk_score": min(10, max(1, round(percent_change / 10))),
             "risk_factors": risk_factors,
             "answer": qa_answer,
-            "diff": full_diff_text
+            "diff": full_diff_text,
+            "grounding": grounding
         }
         
     except Exception as e:
@@ -872,21 +878,23 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
         
         # Q&A if question provided
         ai_response = None
+        grounding = "Grounding: This answer is based on the provided code/content."
         if request.question:
             context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
             if sensitivity_text:
                 context += f"\n🔒 Sensitivity Analysis:\n{sensitivity_text}"
             
-            prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: "{request.question}" """
+            prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: \"{request.question}\" """
             response_chat = ai_model.generate_content(prompt_chat)
-            ai_response = response_chat.text.strip()
+            ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
         
         result = {
-            "test_strategy": strategy_text,
-            "cross_platform_testing": cross_text,
-            "sensitivity_analysis": sensitivity_text,
-            "ai_response": ai_response
+            "test_strategy": f"{strategy_text}\n\n{grounding}",
+            "cross_platform_testing": f"{cross_text}\n\n{grounding}",
+            "sensitivity_analysis": (f"{sensitivity_text}\n\n{grounding}" if sensitivity_text else None),
+            "ai_response": ai_response,
+            "grounding": grounding
         }
         
         print(f"Returning result: {result}")  # Debug log
@@ -963,8 +971,9 @@ async def image_summary(request: ImageRequest, req: Request):
         
         response = ai_model.generate_content([uploaded, prompt])
         summary = response.text.strip()
+        grounding = "Grounding: This answer is based on the provided image content."
         
-        return {"summary": summary}
+        return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1008,8 +1017,9 @@ async def image_qa(request: ImageSummaryRequest, req: Request):
         
         ai_response = ai_model.generate_content([uploaded_img, full_prompt])
         answer = ai_response.text.strip()
+        grounding = "Grounding: This answer is based on the provided image and summary content."
         
-        return {"answer": answer}
+        return {"answer": f"{answer}\n\n{grounding}", "grounding": grounding}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

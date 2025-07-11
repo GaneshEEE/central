@@ -298,10 +298,9 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             supported = False
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
-        if not supported:
-            ai_response = hybrid_rag(request.query)
+        final_response = ai_response if supported else hybrid_rag(request.query)
         return {
-            "response": f"{ai_response}\n\n{grounding}",
+            "response": f"{final_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),
             "page_titles": page_titles,
             "grounding": grounding
@@ -428,9 +427,8 @@ async def video_summarizer(request: VideoRequest, req: Request):
                 answer = qa_response.text.strip()
                 supported = False
             grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
-            if not supported:
-                answer = hybrid_rag(request.question)
-            return {"answer": f"{answer}\n\n{grounding}", "grounding": grounding}
+            final_answer = answer if supported else hybrid_rag(request.question)
+            return {"answer": f"{final_answer}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
         quote_prompt = (
@@ -538,8 +536,7 @@ async def code_assistant(request: CodeRequest, req: Request):
         except Exception:
             summary = summary_response.text.strip()
             supported = False
-        if not supported:
-            summary = hybrid_rag(structured_prompt)
+        final_summary = summary if supported else hybrid_rag(structured_prompt)
         
         # Modify code if instruction provided
         modified_code = None
@@ -554,17 +551,16 @@ async def code_assistant(request: CodeRequest, req: Request):
             try:
                 result = _json.loads(altered_response.text.strip())
                 modified_code = result.get('answer', '').strip()
-                supported = result.get('supported_by_context', False)
+                supported_mod = result.get('supported_by_context', False)
             except Exception:
                 modified_code = altered_response.text.strip()
-                supported = False
-            if not supported:
-                modified_code = hybrid_rag(structured_prompt)
+                supported_mod = False
+            final_modified_code = modified_code if supported_mod else hybrid_rag(structured_prompt)
         
         # Convert to another language if requested
         converted_code = None
         if request.target_language and request.target_language != detected_lang:
-            input_code = modified_code if modified_code else cleaned_code
+            input_code = final_modified_code if request.instruction else cleaned_code
             structured_prompt = (
                 f"Convert the following code to {request.target_language} using ONLY the provided code. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the conversion is not possible from the code, set 'supported_by_context' to false.\n"
                 f"Code:\n{input_code}"
@@ -574,12 +570,11 @@ async def code_assistant(request: CodeRequest, req: Request):
             try:
                 result = _json.loads(lang_response.text.strip())
                 converted_code = result.get('answer', '').strip()
-                supported = result.get('supported_by_context', False)
+                supported_conv = result.get('supported_by_context', False)
             except Exception:
                 converted_code = lang_response.text.strip()
-                supported = False
-            if not supported:
-                converted_code = hybrid_rag(structured_prompt)
+                supported_conv = False
+            final_converted_code = converted_code if supported_conv else hybrid_rag(structured_prompt)
         
         grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
@@ -748,8 +743,7 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
             except Exception:
                 qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
                 supported = False
-            if not supported:
-                qa_answer = hybrid_rag(request.question)
+            final_qa_answer = qa_answer if supported else hybrid_rag(request.question)
         
         return {
             "lines_added": lines_added,
@@ -956,8 +950,7 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
             except Exception:
                 ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
                 supported = False
-            if not supported:
-                ai_response = hybrid_rag(request.question)
+            final_ai_response = ai_response if supported else hybrid_rag(request.question)
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
         
         result = {

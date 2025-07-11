@@ -282,11 +282,23 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             f"Instructions: Begin with the answer based on the context above. Then, if applicable, supplement with general knowledge."
         )
         
-        response = ai_model.generate_content(prompt)
-        ai_response = response.text.strip()
+        structured_prompt = (
+            f"Answer the following question using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the context, set 'supported_by_context' to false.\n"
+            f"Context:\n{full_context}\n\n"
+            f"Question: {request.query}"
+        )
+        response = ai_model.generate_content(structured_prompt)
+        import json as _json
+        try:
+            result = _json.loads(response.text.strip())
+            ai_response = result.get('answer', '').strip()
+            supported = result.get('supported_by_context', False)
+        except Exception:
+            ai_response = response.text.strip()
+            supported = False
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
-        if "not found in provided context" in ai_response.lower():
+        if not supported:
             ai_response = hybrid_rag(request.query)
         return {
             "response": f"{ai_response}\n\n{grounding}",
@@ -401,15 +413,22 @@ async def video_summarizer(request: VideoRequest, req: Request):
         
         # Q&A
         if request.question:
-            qa_prompt = (
-                f"Based on the following video transcript, answer this question: {request.question}\n\n"
-                f"Transcript: {transcript_text[:3000]}\n\n"
-                f"Provide a detailed answer based on the video content."
+            structured_prompt = (
+                f"Answer the following question using ONLY the provided transcript. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the transcript, set 'supported_by_context' to false.\n"
+                f"Transcript:\n{transcript_text[:3000]}\n\n"
+                f"Question: {request.question}"
             )
-            qa_response = ai_model.generate_content(qa_prompt)
-            answer = qa_response.text.strip()
+            qa_response = ai_model.generate_content(structured_prompt)
+            import json as _json
+            try:
+                result = _json.loads(qa_response.text.strip())
+                answer = result.get('answer', '').strip()
+                supported = result.get('supported_by_context', False)
+            except Exception:
+                answer = qa_response.text.strip()
+                supported = False
             grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
-            if "not found in provided context" in answer.lower():
+            if not supported:
                 answer = hybrid_rag(request.question)
             return {"answer": f"{answer}\n\n{grounding}", "grounding": grounding}
         
@@ -506,40 +525,61 @@ async def code_assistant(request: CodeRequest, req: Request):
         detected_lang = detect_language_from_content(cleaned_code)
         
         # Generate summary
-        summary_prompt = (
-            f"The following is content (possibly code or structure) from a Confluence page:\n\n{context}\n\n"
-            "Summarize in detailed paragraph"
+        structured_prompt = (
+            f"Summarize the following code/content using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the summary is not possible from the context, set 'supported_by_context' to false.\n"
+            f"Code/Content:\n{context}"
         )
-        summary_response = ai_model.generate_content(summary_prompt)
-        summary = summary_response.text.strip()
-        if "not found in provided context" in summary.lower():
-            summary = hybrid_rag(summary_prompt)
+        summary_response = ai_model.generate_content(structured_prompt)
+        import json as _json
+        try:
+            result = _json.loads(summary_response.text.strip())
+            summary = result.get('answer', '').strip()
+            supported = result.get('supported_by_context', False)
+        except Exception:
+            summary = summary_response.text.strip()
+            supported = False
+        if not supported:
+            summary = hybrid_rag(structured_prompt)
         
         # Modify code if instruction provided
         modified_code = None
         if request.instruction:
-            alteration_prompt = (
-                f"The following is a piece of code extracted from a Confluence page:\n\n{cleaned_code}\n\n"
-                f"Please modify this code according to the following instruction:\n'{request.instruction}'\n\n"
-                "Return the modified code only. No explanation or extra text."
+            structured_prompt = (
+                f"Modify the following code as per instruction using ONLY the provided code. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the modification is not possible from the code, set 'supported_by_context' to false.\n"
+                f"Code:\n{cleaned_code}\n\n"
+                f"Instruction: {request.instruction}"
             )
-            altered_response = ai_model.generate_content(alteration_prompt)
-            modified_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", altered_response.text.strip(), flags=re.MULTILINE)
-            if "not found in provided context" in modified_code.lower():
-                modified_code = hybrid_rag(alteration_prompt)
+            altered_response = ai_model.generate_content(structured_prompt)
+            import json as _json
+            try:
+                result = _json.loads(altered_response.text.strip())
+                modified_code = result.get('answer', '').strip()
+                supported = result.get('supported_by_context', False)
+            except Exception:
+                modified_code = altered_response.text.strip()
+                supported = False
+            if not supported:
+                modified_code = hybrid_rag(structured_prompt)
         
         # Convert to another language if requested
         converted_code = None
         if request.target_language and request.target_language != detected_lang:
             input_code = modified_code if modified_code else cleaned_code
-            convert_prompt = (
-                f"The following is a code structure or data snippet:\n\n{input_code}\n\n"
-                f"Convert this into equivalent {request.target_language} code. Only show the converted code."
+            structured_prompt = (
+                f"Convert the following code to {request.target_language} using ONLY the provided code. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the conversion is not possible from the code, set 'supported_by_context' to false.\n"
+                f"Code:\n{input_code}"
             )
-            lang_response = ai_model.generate_content(convert_prompt)
-            converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
-            if "not found in provided context" in converted_code.lower():
-                converted_code = hybrid_rag(convert_prompt)
+            lang_response = ai_model.generate_content(structured_prompt)
+            import json as _json
+            try:
+                result = _json.loads(lang_response.text.strip())
+                converted_code = result.get('answer', '').strip()
+                supported = result.get('supported_by_context', False)
+            except Exception:
+                converted_code = lang_response.text.strip()
+                supported = False
+            if not supported:
+                converted_code = hybrid_rag(structured_prompt)
         
         grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
@@ -695,16 +735,20 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
                 f"Risks: {risk_text[:1000]}\n"
                 f"Changes: +{lines_added}, -{lines_removed}, ~{percent_change}%"
             )
-            qa_prompt = f"""You are an expert AI assistant. Based on the report below, answer the user's question clearly.
-
-{context}
-
-Question: {request.question}
-
-Answer:"""
-            qa_response = ai_model.generate_content(qa_prompt)
-            qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
-            if "not found in provided context" in qa_answer.lower():
+            structured_prompt = (
+                f"Answer the following question using ONLY the provided diff and analysis. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the diff/analysis, set 'supported_by_context' to false.\n"
+                f"{context}\n\nDiff:\n{full_diff_text}\n\nQuestion: {request.question}"
+            )
+            qa_response = ai_model.generate_content(structured_prompt)
+            import json as _json
+            try:
+                result = _json.loads(qa_response.text.strip())
+                qa_answer = f"{result.get('answer', '').strip()}\n\n{grounding}"
+                supported = result.get('supported_by_context', False)
+            except Exception:
+                qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
+                supported = False
+            if not supported:
                 qa_answer = hybrid_rag(request.question)
         
         return {
@@ -899,10 +943,20 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
             context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
             if sensitivity_text:
                 context += f"\n🔒 Sensitivity Analysis:\n{sensitivity_text}"
-            prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: \"{request.question}\" """
-            response_chat = ai_model.generate_content(prompt_chat)
-            ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
-            if "not found in provided context" in ai_response.lower():
+            structured_prompt = (
+                f"Answer the following user query using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the context, set 'supported_by_context' to false.\n"
+                f"{context}\n\nQuestion: {request.question}"
+            )
+            response_chat = ai_model.generate_content(structured_prompt)
+            import json as _json
+            try:
+                result = _json.loads(response_chat.text.strip())
+                ai_response = f"{result.get('answer', '').strip()}\n\n{grounding}"
+                supported = result.get('supported_by_context', False)
+            except Exception:
+                ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
+                supported = False
+            if not supported:
                 ai_response = hybrid_rag(request.question)
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
         

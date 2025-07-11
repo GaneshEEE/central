@@ -16,6 +16,9 @@ from docx import Document
 from dotenv import load_dotenv
 from atlassian import Confluence
 import google.generativeai as genai
+import sys
+sys.path.append(r"c:/Users/Dhaya Arun/Downloads/finalui-main/finalui-main")
+from test import hybrid_rag
 from bs4 import BeautifulSoup
 from io import BytesIO
 import difflib
@@ -283,7 +286,8 @@ async def ai_powered_search(request: SearchRequest, req: Request):
         ai_response = response.text.strip()
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
-        
+        if "not found in provided context" in ai_response.lower():
+            ai_response = hybrid_rag(request.query)
         return {
             "response": f"{ai_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),
@@ -403,8 +407,11 @@ async def video_summarizer(request: VideoRequest, req: Request):
                 f"Provide a detailed answer based on the video content."
             )
             qa_response = ai_model.generate_content(qa_prompt)
+            answer = qa_response.text.strip()
             grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
-            return {"answer": f"{qa_response.text.strip()}\n\n{grounding}", "grounding": grounding}
+            if "not found in provided context" in answer.lower():
+                answer = hybrid_rag(request.question)
+            return {"answer": f"{answer}\n\n{grounding}", "grounding": grounding}
         
         # Generate quotes
         quote_prompt = (
@@ -505,6 +512,8 @@ async def code_assistant(request: CodeRequest, req: Request):
         )
         summary_response = ai_model.generate_content(summary_prompt)
         summary = summary_response.text.strip()
+        if "not found in provided context" in summary.lower():
+            summary = hybrid_rag(summary_prompt)
         
         # Modify code if instruction provided
         modified_code = None
@@ -516,6 +525,8 @@ async def code_assistant(request: CodeRequest, req: Request):
             )
             altered_response = ai_model.generate_content(alteration_prompt)
             modified_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", altered_response.text.strip(), flags=re.MULTILINE)
+            if "not found in provided context" in modified_code.lower():
+                modified_code = hybrid_rag(alteration_prompt)
         
         # Convert to another language if requested
         converted_code = None
@@ -527,6 +538,8 @@ async def code_assistant(request: CodeRequest, req: Request):
             )
             lang_response = ai_model.generate_content(convert_prompt)
             converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
+            if "not found in provided context" in converted_code.lower():
+                converted_code = hybrid_rag(convert_prompt)
         
         grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
@@ -691,6 +704,8 @@ Question: {request.question}
 Answer:"""
             qa_response = ai_model.generate_content(qa_prompt)
             qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
+            if "not found in provided context" in qa_answer.lower():
+                qa_answer = hybrid_rag(request.question)
         
         return {
             "lines_added": lines_added,
@@ -884,10 +899,11 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
             context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
             if sensitivity_text:
                 context += f"\n🔒 Sensitivity Analysis:\n{sensitivity_text}"
-            
             prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: \"{request.question}\" """
             response_chat = ai_model.generate_content(prompt_chat)
             ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
+            if "not found in provided context" in ai_response.lower():
+                ai_response = hybrid_rag(request.question)
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
         
         result = {

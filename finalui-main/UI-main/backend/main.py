@@ -282,12 +282,13 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             f"Instructions: Begin with the answer based on the context above. Then, if applicable, supplement with general knowledge."
         )
         
-        structured_prompt = (
-            f"Answer the following question using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the context, set 'supported_by_context' to false.\n"
+        strict_prompt = (
+            f"Use ONLY the following context to answer the question. Do not use any external knowledge.\n"
             f"Context:\n{full_context}\n\n"
-            f"Question: {request.query}"
+            f"Question: {request.query}\n"
+            "Return a JSON object with fields 'answer' and 'supported_by_context' (true if the answer is fully supported by the context, false otherwise)."
         )
-        response = ai_model.generate_content(structured_prompt)
+        response = ai_model.generate_content(strict_prompt)
         import json as _json
         try:
             result = _json.loads(response.text.strip())
@@ -297,13 +298,13 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             ai_response = response.text.strip()
             supported = False
         page_titles = [p["title"] for p in selected_pages]
-        grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
+        context_used = full_context if supported else "Hybrid RAG (web search)"
         final_response = ai_response if supported else hybrid_rag(request.query)
         return {
-            "response": f"{final_response}\n\n{grounding}",
+            "answer": final_response,
+            "context_used": context_used,
             "pages_analyzed": len(selected_pages),
-            "page_titles": page_titles,
-            "grounding": grounding
+            "page_titles": page_titles
         }
         
     except Exception as e:

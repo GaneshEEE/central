@@ -214,6 +214,44 @@ def auto_detect_space(confluence, space_key: Optional[str] = None) -> str:
         return spaces[0]["key"]
     raise HTTPException(status_code=400, detail="Multiple spaces found. Please specify a space_key.")
 
+def is_generic_answer(answer: str, context: str) -> bool:
+    """
+    Returns True if the answer is generic and not context-specific.
+    Heuristics:
+    - Answer is short (< 80 chars)
+    - Answer contains generic phrases
+    - Answer does not overlap with context
+    """
+    generic_phrases = [
+        "There are several ways to summarize",
+        "Online tools like",
+        "AI summarizers",
+        "Some platforms",
+        "depending on the tools available",
+        "limitations on document length",
+        "require paid subscriptions",
+        "offer built-in summarization capabilities",
+        "Google Assistant can summarize",
+        "TLDThis.com offer free text summarization",
+        "Atlassian Intelligence",
+        "Other AI summarizers",
+        "If accessed through the Google Chrome browser",
+        "desired level of detail"
+    ]
+    answer_lower = answer.lower()
+    if len(answer) < 80:
+        return True
+    for phrase in generic_phrases:
+        if phrase.lower() in answer_lower:
+            return True
+    # Check for overlap with context (at least 2 unique words in both)
+    context_words = set(context.lower().split())
+    answer_words = set(answer_lower.split())
+    overlap = context_words.intersection(answer_words)
+    if len(overlap) < 2:
+        return True
+    return False
+
 # API Endpoints
 @app.get("/")
 async def root():
@@ -295,7 +333,8 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             supported = result.get('supported_by_context', False)
         except Exception:
             ai_response = response.text.strip()
-            supported = False
+            # Heuristic: If the answer is not generic and overlaps with context, accept it
+            supported = not is_generic_answer(ai_response, full_context)
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         final_response = ai_response if supported else hybrid_rag(request.query)

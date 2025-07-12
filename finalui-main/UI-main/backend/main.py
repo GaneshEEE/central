@@ -331,13 +331,17 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             result = _json.loads(response.text.strip())
             ai_response = result.get('answer', '').strip()
             supported = result.get('supported_by_context', False)
+            if not supported:
+                ai_response = hybrid_rag(request.query)
         except Exception:
             ai_response = response.text.strip()
             # Heuristic: If the answer is not generic and overlaps with context, accept it
             supported = not is_generic_answer(ai_response, full_context)
+            if not supported:
+                ai_response = hybrid_rag(request.query)
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
-        final_response = ai_response if supported else hybrid_rag(request.query)
+        final_response = ai_response
         return {
             "response": f"{final_response}\n\n{grounding}",
             "pages_analyzed": len(selected_pages),

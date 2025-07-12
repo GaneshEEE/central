@@ -357,6 +357,11 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             # If ast.literal_eval succeeded and ai_response is still a dict, extract 'answer'
             if isinstance(ai_response, dict):
                 ai_response = ai_response.get('answer', '').strip()
+            # If ai_response is still a string that looks like a dict, extract 'answer' value with regex
+            elif isinstance(ai_response, str):
+                match = re.search(r"['\"]?answer['\"]?\s*:\s*['\"]([^'\"]+)['\"]", ai_response)
+                if match:
+                    ai_response = match.group(1).strip()
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         final_response = ai_response

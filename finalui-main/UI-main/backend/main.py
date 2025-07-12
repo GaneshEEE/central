@@ -23,6 +23,7 @@ from bs4 import BeautifulSoup
 from io import BytesIO
 import difflib
 import base64
+import ast
 
 # Load environment variables
 load_dotenv()
@@ -335,10 +336,24 @@ async def ai_powered_search(request: SearchRequest, req: Request):
                 ai_response = hybrid_rag(request.query)
         except Exception:
             ai_response = response.text.strip()
-            # Heuristic: If the answer is not generic and overlaps with context, accept it
-            supported = not is_generic_answer(ai_response, full_context)
-            if not supported:
-                ai_response = hybrid_rag(request.query)
+            supported = None
+            # Try ast.literal_eval for Python-style dict
+            try:
+                result = ast.literal_eval(response.text.strip())
+                if isinstance(result, dict):
+                    ai_response = result.get('answer', '').strip()
+                    supported = result.get('supported_by_context', False)
+                    if not supported:
+                        ai_response = hybrid_rag(request.query)
+            except Exception:
+                # Regex fallback for supported_by_context: false
+                if re.search(r"supported_by_context['\"]?\s*[:=]\s*false", response.text.strip(), re.IGNORECASE):
+                    ai_response = hybrid_rag(request.query)
+                else:
+                    # Heuristic: If the answer is not generic and overlaps with context, accept it
+                    supported = not is_generic_answer(ai_response, full_context)
+                    if not supported:
+                        ai_response = hybrid_rag(request.query)
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         final_response = ai_response

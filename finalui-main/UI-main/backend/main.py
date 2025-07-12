@@ -354,6 +354,9 @@ async def ai_powered_search(request: SearchRequest, req: Request):
                     supported = not is_generic_answer(ai_response, full_context)
                     if not supported:
                         ai_response = hybrid_rag(request.query)
+            # If ast.literal_eval succeeded and ai_response is still a dict, extract 'answer'
+            if isinstance(ai_response, dict):
+                ai_response = ai_response.get('answer', '').strip()
         page_titles = [p["title"] for p in selected_pages]
         grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
         final_response = ai_response

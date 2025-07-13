@@ -7,8 +7,7 @@ GOOGLE_API_KEY = "AIzaSyBiI_i8JbSsAVFNiaMBcLw_jABTrS_HXrA"          # Replace th
 SEARCH_ENGINE_ID = "d35cd327525264522"                              # Replace this
 
 # === CONFIGURE GEMINI ===
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+
 
 # === GOOGLE SEARCH FUNCTION ===
 def search_web_google(query, num_results=5):

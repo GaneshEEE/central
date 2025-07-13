@@ -2,11 +2,12 @@ import google.generativeai as genai
 import requests
 
 # === YOUR API KEYS ===
-        
+GEMINI_API_KEY = "AIzaSyAPfnYR3v_TsclJMEljtU6vNgcvafDFd78"          # Replace this
 GOOGLE_API_KEY = "AIzaSyBiI_i8JbSsAVFNiaMBcLw_jABTrS_HXrA"          # Replace this
 SEARCH_ENGINE_ID = "d35cd327525264522"                              # Replace this
 
 # === CONFIGURE GEMINI ===
+genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
 
 # === GOOGLE SEARCH FUNCTION ===

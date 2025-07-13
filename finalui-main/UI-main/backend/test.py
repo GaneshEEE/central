@@ -2,7 +2,7 @@ import google.generativeai as genai
 import requests
 
 # === YOUR API KEYS ===
-GEMINI_API_KEY = "AIzaSyAPfnYR3v_TsclJMEljtU6vNgcvafDFd"          # Replace this
+        
 GOOGLE_API_KEY = "AIzaSyBiI_i8JbSsAVFNiaMBcLw_jABTrS_HXrA"          # Replace this
 SEARCH_ENGINE_ID = "d35cd327525264522"                              # Replace this
 

@@ -1,8 +1,9 @@
 import google.generativeai as genai
 import requests
+import os
 
 # === YOUR API KEYS ===
-GEMINI_API_KEY = "AIzaSyAPfnYR3v_TsclJMEljtU6vNgcvafDFd78"          # Replace this
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")          # Now loaded from environment variable
 GOOGLE_API_KEY = "AIzaSyBiI_i8JbSsAVFNiaMBcLw_jABTrS_HXrA"          # Replace this
 SEARCH_ENGINE_ID = "d35cd327525264522"                              # Replace this
 

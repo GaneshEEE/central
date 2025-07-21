@@ -25,7 +25,6 @@ import difflib
 import base64
 import ast
 import pandas as pd
-import tempfile
 
 # Load environment variables
 load_dotenv()
@@ -101,6 +100,26 @@ class ChartRequest(BaseModel):
     space_key: str
     page_title: str
     image_url: str
+    chart_type: str
+    filename: str
+    format: str
+
+class ExcelRequest(BaseModel):
+    space_key: str
+    page_title: str
+    excel_url: str
+
+class ExcelSummaryRequest(BaseModel):
+    space_key: str
+    page_title: str
+    excel_url: str
+    summary: str
+    question: str
+
+class ChartFromExcelRequest(BaseModel):
+    space_key: str
+    page_title: str
+    excel_url: str
     chart_type: str
     filename: str
     format: str
@@ -404,26 +423,25 @@ async def video_summarizer(request: VideoRequest, req: Request):
     if not video_attachment:
         raise HTTPException(status_code=404, detail="No .mp4 video attachment found on this page.")
 
-        # Download file (any format)
-        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-        response = requests.get(request.image_url, auth=auth)
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch file")
-        file_bytes = response.content
-        # Detect file extension from URL
-        import os
-        _, ext = os.path.splitext(request.image_url)
-        ext = ext if ext else '.bin'
-        # Upload to Gemini (preserve original extension)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp.write(file_bytes)
-            tmp.flush()
-            uploaded = genai.upload_file(
-                path=tmp.name,
-                mime_type=None,  # Let Gemini auto-detect
-                display_name=f"confluence_file_{request.page_title}{ext}"
-            )
-    # Exception handling for ffmpeg audio extraction is now properly scoped in the previous patch.
+    # Download video
+    video_url = video_attachment["_links"]["download"]
+    full_url = f"{os.getenv('CONFLUENCE_BASE_URL').rstrip('/')}{video_url}"
+    video_name = video_attachment["title"].replace(" ", "_")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = os.path.join(tmpdir, video_name)
+        audio_path = os.path.join(tmpdir, "audio.mp3")
+        # Download video file
+        video_data = confluence._session.get(full_url).content
+        with open(video_path, "wb") as f:
+            f.write(video_data)
+        # Extract audio using ffmpeg
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "mp3", audio_path
+            ], check=True, capture_output=True)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"ffmpeg audio extraction failed: {e}")
         # Upload audio to AssemblyAI
         assemblyai_api_key = os.getenv('ASSEMBLYAI_API_KEY')
         if not assemblyai_api_key:
@@ -844,58 +862,77 @@ async def test_support(request: TestRequest, req: Request):
         confluence = init_confluence()
         space_key = auto_detect_space(confluence, getattr(request, 'space_key', None))
         
-        # Download file (any format)
-        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-        response = requests.get(request.image_url, auth=auth)
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch file")
-        file_bytes = response.content
-        import os
-        _, ext = os.path.splitext(request.image_url)
-        ext = ext.lower()
-        # Save to temp file with correct extension
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp.write(file_bytes)
-            tmp.flush()
-            # Upload to Gemini (auto-detect mime)
-            uploaded = genai.upload_file(
-                path=tmp.name,
-                mime_type=None,
-                display_name=f"confluence_file_{request.page_title}{ext}"
-            )
-        # Prompt based on file type
-        if ext in ['.csv', '.xlsx']:
-            prompt = (
-                "You are analyzing a spreadsheet or table file. Summarize the main data, trends, and key figures. "
-                "If possible, mention column names and any notable patterns. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.pdf']:
-            prompt = (
-                "You are analyzing a PDF document. Summarize the main content, topics, and any key findings. "
-                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.docx', '.doc']:
-            prompt = (
-                "You are analyzing a Word document. Summarize the main content, topics, and any key findings. "
-                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
-            prompt = (
-                "You are analyzing an image from documentation. "
-                "If the image is a chart or graph, explain what is shown in detail. "
-                "If it's code, summarize what the code does. "
-                "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
-            )
-        else:
-            prompt = (
-                "You are analyzing a file from documentation. Summarize the main content and any key findings. "
-                "Provide an informative analysis in 1 paragraph."
-            )
-        response = ai_model.generate_content([uploaded, prompt])
-        summary = response.text.strip()
-        grounding = f"Grounding: This answer is based on the provided file content ({ext if ext else 'unknown type'})."
-        return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
+        # Get code page
+        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=50)
+        code_page = next((p for p in pages if p["title"] == request.code_page_title), None)
+        
+        if not code_page:
+            raise HTTPException(status_code=400, detail="Code page not found")
+        
+        print(f"Found code page: {code_page['title']}")  # Debug log
+        
+        code_data = confluence.get_page_by_id(code_page["id"], expand="body.storage")
+        code_content = code_data["body"]["storage"]["value"]
+        
+        print(f"Code content length: {len(code_content)}")  # Debug log
+        
+        # Generate test strategy
+        prompt_strategy = f"""The following is a code snippet:\n\n{code_content[:2000]}\n\nPlease generate a **structured test strategy** for the above code using the following format. 
 
+Make sure each section heading is **clearly labeled** and includes a **percentage estimate** of total testing effort and the total of all percentage values across Unit Test, Integration Test, and End-to-End (E2E) Test must add up to exactly **100%**. Each subpoint should be short (1–2 lines max). Use bullet points for clarity.
+
+---
+
+
+## Unit Test (xx%)
+- **Coverage Areas**:  
+  - What functions or UI elements are directly tested?  
+- **Edge Cases**:  
+  - List 2–3 specific edge conditions or unusual inputs.
+
+## Integration Test (xx%)
+- **Integrated Modules**:  
+  - What parts of the system work together and need testing as a unit?  
+- **Data Flow Validation**:  
+  - How does data move between components or layers?
+
+## End-to-End (E2E) Test (xx%)
+- **User Scenarios**:  
+  - Provide 2–3 user flows that simulate real usage.  
+- **System Dependencies**:  
+  - What systems, APIs, or services must be operational?
+
+## Test Data Management
+- **Data Requirements**:  
+  - What test data (e.g., users, tokens, inputs) is needed?  
+- **Data Setup & Teardown**:  
+  - How is test data created and removed?
+
+## Automation Strategy
+- **Frameworks/Tools**:  
+  - Recommend tools for each test level.  
+- **CI/CD Integration**:  
+  - How will tests be included in automated pipelines?
+
+## Risk Areas Identified
+- **Complex Logic**:  
+  - Highlight any logic that's error-prone or tricky.  
+- **Third-Party Dependencies**:  
+  - Any reliance on external APIs or libraries?  
+- **Security/Critical Flows**:  
+  - Mention any data protection or authentication flows.
+
+## Additional Considerations
+- **Security**:  
+  - Are there vulnerabilities or security-sensitive operations?  
+- **Accessibility**:  
+  - Are there any compliance or usability needs?  
+- **Performance**:  
+  - Should speed, responsiveness, or load handling be tested?
+
+---
+
+Please format your response exactly like this structure, using proper markdown headings, short bullet points, and estimated test effort percentages. """
 
         response_strategy = ai_model.generate_content(prompt_strategy)
         strategy_text = response_strategy.text.strip()
@@ -905,7 +942,7 @@ async def test_support(request: TestRequest, req: Request):
         # Generate cross-platform testing
         prompt_cross_platform = f"""You are a cross-platform UI testing expert. Analyze the following frontend code and generate a detailed cross-platform test strategy using the structure below. Your insights should be **relevant to the code**, not generic. Code:\n\n{code_content[:2000]}\n\nFollow the format strictly and customize values based on the code analysis. Avoid repeating default phrases — provide actual testing considerations derived from the code.
 
-
+---
 
 
 ## Platform Coverage Assessment
@@ -1047,68 +1084,106 @@ async def get_images(space_key: Optional[str] = None, page_title: str = ""):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/excel-files/{space_key}/{page_title}")
+async def get_excel_files(space_key: Optional[str] = None, page_title: str = ""):
+    """Get all Excel files from a specific page"""
+    try:
+        confluence = init_confluence()
+        space_key = auto_detect_space(confluence, space_key)
+        
+        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
+        page = next((p for p in pages if p["title"].strip().lower() == page_title.strip().lower()), None)
+        
+        if not page:
+            raise HTTPException(status_code=404, detail=f"Page '{page_title}' not found")
+            
+        page_id = page["id"]
+        attachments = confluence.get_attachments_from_content(page_id=page_id, limit=100)
+        
+        base_url = os.getenv("CONFLUENCE_BASE_URL")
+        excel_files = []
+        for attachment in attachments['results']:
+            if attachment['title'].endswith(('.xlsx', '.xls')):
+                excel_files.append({
+                    "id": attachment['id'],
+                    "name": attachment['title'],
+                    "url": base_url + attachment['_links']['download']
+                })
+                
+        return {"excel_files": excel_files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/image-summary")
 async def image_summary(request: ImageRequest, req: Request):
-    """Generate AI summary for any file type (image, Excel, PDF, etc.)"""
+    """Generate AI summary for an image"""
     try:
         api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
         genai.configure(api_key=api_key)
         ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
         confluence = init_confluence()
         space_key = auto_detect_space(confluence, getattr(request, 'space_key', None))
-
-        # Download file (any format)
+        
+        # Download image
         auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
         response = requests.get(request.image_url, auth=auth)
         if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch file")
-        file_bytes = response.content
-        import os
+            raise HTTPException(status_code=404, detail="Failed to fetch image")
+        
+        image_bytes = response.content
+        
+        # Upload to Gemini
         import tempfile
-        _, ext = os.path.splitext(request.image_url)
-        ext = ext.lower()
-        # Save to temp file with correct extension
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp.write(file_bytes)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+            tmp.write(image_bytes)
             tmp.flush()
-            # Upload to Gemini (auto-detect mime)
             uploaded = genai.upload_file(
                 path=tmp.name,
-                mime_type=None,
-                display_name=f"confluence_file_{request.page_title}{ext}"
+                mime_type="image/png",
+                display_name=f"confluence_image_{request.page_title}.png"
             )
-        # Prompt based on file type
-        if ext in ['.csv', '.xlsx']:
-            prompt = (
-                "You are analyzing a spreadsheet or table file. Summarize the main data, trends, and key figures. "
-                "If possible, mention column names and any notable patterns. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.pdf']:
-            prompt = (
-                "You are analyzing a PDF document. Summarize the main content, topics, and any key findings. "
-                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.docx', '.doc']:
-            prompt = (
-                "You are analyzing a Word document. Summarize the main content, topics, and any key findings. "
-                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
-            )
-        elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
-            prompt = (
-                "You are analyzing an image from documentation. "
-                "If the image is a chart or graph, explain what is shown in detail. "
-                "If it's code, summarize what the code does. "
-                "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
-            )
-        else:
-            prompt = (
-                "You are analyzing a file from documentation. Summarize the main content and any key findings. "
-                "Provide an informative analysis in 1 paragraph."
-            )
+        
+        prompt = (
+            "You are analyzing a technical image from a documentation page. "
+            "If it's a chart or graph, explain what is shown in detail. "
+            "If it's code, summarize what the code does. "
+            "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
+        )
+        
         response = ai_model.generate_content([uploaded, prompt])
         summary = response.text.strip()
-        grounding = f"Grounding: This answer is based on the provided file content ({ext if ext else 'unknown type'})."
+        grounding = "Grounding: This answer is based on the provided image content."
+        
         return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/excel-summary")
+async def excel_summary(request: ExcelRequest, req: Request):
+    """Generate AI summary for an Excel file"""
+    try:
+        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
+        genai.configure(api_key=api_key)
+        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+        
+        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
+        response = requests.get(request.excel_url, auth=auth)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Failed to fetch Excel file")
+        
+        excel_bytes = response.content
+        df = pd.read_excel(BytesIO(excel_bytes))
+        
+        prompt = (
+            "You are analyzing an Excel file. Provide a concise summary of the data, including key insights and trends.\n\n"
+            f"Data:\n{df.to_string()}"
+        )
+        
+        response = ai_model.generate_content(prompt)
+        summary = response.text.strip()
+        
+        return {"summary": summary}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1158,6 +1233,36 @@ async def image_qa(request: ImageSummaryRequest, req: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/excel-qa")
+async def excel_qa(request: ExcelSummaryRequest, req: Request):
+    """Generate AI response for a question about an excel file"""
+    try:
+        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
+        genai.configure(api_key=api_key)
+        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+        
+        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
+        response = requests.get(request.excel_url, auth=auth)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Failed to fetch excel file")
+        
+        excel_bytes = response.content
+        df = pd.read_excel(BytesIO(excel_bytes))
+        
+        full_prompt = (
+            "Answer the user's question based on the provided summary and data from an Excel file.\n\n"
+            f"Summary:\n{request.summary}\n\n"
+            f"Data:\n{df.to_string()}\n\n"
+            f"User Question:\n{request.question}"
+        )
+        
+        ai_response = ai_model.generate_content(full_prompt)
+        answer = ai_response.text.strip()
+        
+        return {"answer": answer}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/create-chart")
 async def create_chart(request: ChartRequest, req: Request):
     """Create chart from image data"""
@@ -1193,11 +1298,10 @@ async def create_chart(request: ChartRequest, req: Request):
             )
         
         graph_prompt = (
-            "You are looking at an image of an Excel sheet or a table. "
-            "Extract the full table data as CSV. "
-            "Return only the raw CSV table: no markdown, no comments, no code blocks. "
-            "The first row should be the header. "
-            "Ensure all values are properly aligned in columns. Do NOT summarize—just output the table."
+            "You're looking at a Likert-style bar chart image or table. Extract the full numeric table represented by the chart.\n"
+            "Return only the raw CSV table: no markdown, no comments, no code blocks.\n"
+            "The first column must be the response category (e.g., Strongly Agree), followed by columns for group counts (e.g., Students, Lecturers, Staff, Total).\n"
+            "Ensure all values are numeric and the CSV is properly aligned. Do NOT summarize—just output the table."
         )
         
         graph_response = ai_model.generate_content([uploaded_img, graph_prompt])
@@ -1281,6 +1385,53 @@ async def create_chart(request: ChartRequest, req: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/create-chart-from-excel")
+async def create_chart_from_excel(request: ChartFromExcelRequest, req: Request):
+    """Create chart from excel data"""
+    try:
+        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
+        genai.configure(api_key=api_key)
+        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+        
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
+        response = requests.get(request.excel_url, auth=auth)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Failed to fetch excel file")
+        
+        excel_bytes = response.content
+        df = pd.read_excel(BytesIO(excel_bytes))
+
+        plt.figure(figsize=(10, 6))
+        
+        if request.chart_type == "Grouped Bar":
+            df.plot(kind='bar', ax=plt.gca())
+        elif request.chart_type == "Line":
+            df.plot(kind='line', ax=plt.gca())
+        elif request.chart_type == "Pie":
+            df.iloc[0].plot(kind='pie', autopct='%1.1f%%', ax=plt.gca())
+        elif request.chart_type == "Stacked Bar":
+            df.plot(kind='bar', stacked=True, ax=plt.gca())
+
+        plt.title(f"{request.chart_type} Chart")
+        plt.tight_layout()
+        
+        buf = BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        chart_data = base64.b64encode(buf.read()).decode('utf-8')
+        
+        return {
+            "chart_data": chart_data,
+            "mime_type": "image/png",
+            "filename": f"{request.filename}.png"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/export")
 async def export_content(request: ExportRequest, req: Request):
     """Export content in various formats"""
@@ -1344,42 +1495,6 @@ async def save_to_confluence(request: SaveToConfluenceRequest, req: Request):
         return {"message": "Page updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/upload-excel")
-async def upload_excel(file: UploadFile = File(...)):
-    """
-    Accept an Excel (.xlsx) or CSV file, extract the table, summarize, and return data for charting.
-    """
-    import pandas as pd
-    import tempfile
-
-    # Save uploaded file to a temp location
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
-        tmp.write(await file.read())
-        tmp.flush()
-        tmp_path = tmp.name
-
-    # Read Excel or CSV
-    try:
-        if file.filename.lower().endswith('.csv'):
-            df = pd.read_csv(tmp_path)
-        else:
-            df = pd.read_excel(tmp_path)
-    except Exception as e:
-        return {"error": f"Failed to read file: {str(e)}"}
-
-    # Summarize table (basic: show shape, columns, sample data)
-    summary = f"Table shape: {df.shape}\nColumns: {', '.join(map(str, df.columns))}\nSample data:\n{df.head().to_string(index=False)}"
-
-    # Convert to CSV for chart builder
-    csv_data = df.to_csv(index=False)
-
-    return {
-        "summary": summary,
-        "csv": csv_data,
-        "columns": list(df.columns),
-        "rows": df.to_dict(orient="records")
-    }
 
 @app.get("/test")
 async def test_endpoint():

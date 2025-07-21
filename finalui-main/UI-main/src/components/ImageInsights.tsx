@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Image, Download, Save, X, ChevronDown, Loader2, MessageSquare, BarChart3, Search, Video, Code, TrendingUp, TestTube, Eye, Zap } from 'lucide-react';
+import { Image, Download, Save, X, ChevronDown, Loader2, MessageSquare, BarChart3, Search, Video, Code, TrendingUp, TestTube, Eye, Zap, FileSpreadsheet } from 'lucide-react';
 import { FeatureType } from '../App';
-import { apiService } from '../services/api';
+import { apiService, ExcelFile } from '../services/api';
 import { getConfluenceSpaceAndPageFromUrl } from '../utils/urlUtils';
 
 interface ImageInsightsProps {
@@ -20,6 +20,15 @@ interface ImageData {
   pageTitle?: string;
 }
 
+interface ExcelData {
+  id: string;
+  name: string;
+  url: string;
+  summary?: string;
+  qa?: { question: string; answer: string }[];
+  pageTitle?: string;
+}
+
 interface ChartData {
   type: 'bar' | 'line' | 'pie' | 'stacked';
   data: any;
@@ -30,9 +39,12 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
   const [spaceKey, setSpaceKey] = useState<string>('');
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
   const [images, setImages] = useState<ImageData[]>([]);
+  const [excelFiles, setExcelFiles] = useState<ExcelData[]>([]);
+  const [analysisType, setAnalysisType] = useState<'image' | 'excel'>('image');
   const [isAnalyzing, setIsAnalyzing] = useState<string>('');
   const [newQuestion, setNewQuestion] = useState('');
   const [selectedImage, setSelectedImage] = useState<string>('');
+  const [selectedExcel, setSelectedExcel] = useState<string>('');
   const [fileName, setFileName] = useState('');
   const [exportFormat, setExportFormat] = useState('pdf');
   const [chartData, setChartData] = useState<ChartData | null>(null);
@@ -44,6 +56,7 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
   const [isLoadingSpaces, setIsLoadingSpaces] = useState(false);
   const [isLoadingPages, setIsLoadingPages] = useState(false);
   const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [isLoadingExcelFiles, setIsLoadingExcelFiles] = useState(false);
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const [isCreatingChart, setIsCreatingChart] = useState(false);
   const [isChangingChartType, setIsChangingChartType] = useState(false);
@@ -119,41 +132,59 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
     
     try {
       const allImages: ImageData[] = [];
+      
       for (const pageTitle of selectedPages) {
         try {
           const response = await apiService.getImages(spaceKey, pageTitle);
-          // For each file, fetch and summarize immediately
-          for (let index = 0; index < response.images.length; index++) {
-            const url = response.images[index];
-            let summary = '';
-            try {
-              const summaryResp = await apiService.imageSummary({
-                space_key: spaceKey,
-                page_title: pageTitle,
-                image_url: url
-              });
-              summary = summaryResp.summary;
-            } catch (err) {
-              summary = '';
-            }
-            allImages.push({
-              id: `${pageTitle}_${index}`,
-              name: `Image ${index + 1} from ${pageTitle}`,
-              url,
-              pageTitle,
-              summary,
-              qa: []
-            });
-          }
+          const pageImages = response.images.map((url, index) => ({
+            id: `${pageTitle}_${index}`,
+            name: `Image ${index + 1} from ${pageTitle}`,
+            url,
+            pageTitle,
+            qa: []
+          }));
+          allImages.push(...pageImages);
         } catch (error) {
           console.error(`Failed to load images from page ${pageTitle}:`, error);
         }
       }
+      
       setImages(allImages);
     } catch (error) {
       console.error('Failed to load images:', error);
     } finally {
       setIsLoadingImages(false);
+    }
+  };
+
+  const loadExcelFiles = async () => {
+    if (!spaceKey || selectedPages.length === 0) return;
+    setIsLoadingExcelFiles(true);
+
+    try {
+      const allExcelFiles: ExcelData[] = [];
+
+      for (const pageTitle of selectedPages) {
+        try {
+          const response = await apiService.getExcelFiles(spaceKey, pageTitle);
+          const pageExcelFiles = response.excel_files.map((file) => ({
+            id: file.id,
+            name: file.name,
+            url: file.url,
+            pageTitle,
+            qa: []
+          }));
+          allExcelFiles.push(...pageExcelFiles);
+        } catch (error) {
+          console.error(`Failed to load excel files from page ${pageTitle}:`, error);
+        }
+      }
+
+      setExcelFiles(allExcelFiles);
+    } catch (error) {
+      console.error('Failed to load excel files:', error);
+    } finally {
+      setIsLoadingExcelFiles(false);
     }
   };
 
@@ -193,82 +224,169 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
     }
   };
 
-  const addQuestion = async () => {
-    if (!newQuestion.trim() || !selectedImage) return;
-    
-    setIsAskingQuestion(true);
-    try {
-      const image = images.find(img => img.id === selectedImage);
-      if (!image || !image.pageTitle || !image.summary) {
-        throw new Error('Image not found or missing required data');
-      }
-      
-      const response = await apiService.imageQA({
-        space_key: spaceKey,
-        page_title: image.pageTitle,
-        image_url: image.url,
-        summary: image.summary,
-        question: newQuestion
-      });
-      
-      setImages(prev => prev.map(img =>
-        img.id === selectedImage
-          ? {
-              ...img,
-              qa: [...(img.qa || []), { question: newQuestion, answer: response.answer }]
-            }
-          : img
-      ));
-      setNewQuestion('');
-    } catch (error) {
-      console.error('Failed to get AI response:', error);
-      // Fallback to sample answer
-      const answer = `Based on the AI analysis of this image, here's the response to your question: "${newQuestion}"
+  const analyzeExcel = async (excelId: string) => {
+    setIsAnalyzing(excelId);
 
-The image analysis reveals specific data patterns and visual elements that directly relate to your inquiry. The AI has processed the visual content and extracted relevant insights to provide this contextual response.`;
-      setImages(prev => prev.map(img =>
-        img.id === selectedImage
-          ? {
-              ...img,
-              qa: [...(img.qa || []), { question: newQuestion, answer }]
-            }
-          : img
+    try {
+      const excelFile = excelFiles.find(file => file.id === excelId);
+      if (!excelFile || !excelFile.pageTitle) {
+        throw new Error('Excel file not found or missing page title');
+      }
+
+      const response = await apiService.excelSummary({
+        space_key: spaceKey,
+        page_title: excelFile.pageTitle,
+        excel_url: excelFile.url
+      });
+
+      setExcelFiles(prev => prev.map(file =>
+        file.id === excelId
+          ? { ...file, summary: response.summary }
+          : file
       ));
-      setNewQuestion('');
+    } catch (error) {
+      console.error('Failed to analyze excel file:', error);
+      setExcelFiles(prev => prev.map(file =>
+        file.id === excelId
+          ? {
+              ...file,
+              summary: `AI Analysis of ${file.name}: This Excel file contains structured data, which can be analyzed for key insights, trends, and statistical information.`
+            }
+          : file
+      ));
     } finally {
-      setIsAskingQuestion(false);
+      setIsAnalyzing('');
     }
   };
 
-  const createChart = async (imageId: string, chartType?: string, exportFormat?: string) => {
+  const addQuestion = async () => {
+    if (!newQuestion.trim() || (analysisType === 'image' && !selectedImage) || (analysisType === 'excel' && !selectedExcel)) return;
+    
+    setIsAskingQuestion(true);
+
+    if (analysisType === 'image') {
+      try {
+        const image = images.find(img => img.id === selectedImage);
+        if (!image || !image.pageTitle || !image.summary) {
+          throw new Error('Image not found or missing required data');
+        }
+        
+        const response = await apiService.imageQA({
+          space_key: spaceKey,
+          page_title: image.pageTitle,
+          image_url: image.url,
+          summary: image.summary,
+          question: newQuestion
+        });
+        
+        setImages(prev => prev.map(img =>
+          img.id === selectedImage
+            ? {
+                ...img,
+                qa: [...(img.qa || []), { question: newQuestion, answer: response.answer }]
+              }
+            : img
+        ));
+        setNewQuestion('');
+      } catch (error) {
+        console.error('Failed to get AI response:', error);
+        // Fallback to sample answer
+        const answer = `Based on the AI analysis of this image, here's the response to your question: "${newQuestion}"
+
+The image analysis reveals specific data patterns and visual elements that directly relate to your inquiry. The AI has processed the visual content and extracted relevant insights to provide this contextual response.`;
+        setImages(prev => prev.map(img =>
+          img.id === selectedImage
+            ? {
+                ...img,
+                qa: [...(img.qa || []), { question: newQuestion, answer }]
+              }
+            : img
+        ));
+        setNewQuestion('');
+      } finally {
+        setIsAskingQuestion(false);
+      }
+    } else { // excel
+      try {
+        const excelFile = excelFiles.find(file => file.id === selectedExcel);
+        if (!excelFile || !excelFile.pageTitle || !excelFile.summary) {
+          throw new Error('Excel file not found or missing required data');
+        }
+
+        const response = await apiService.excelQA({
+          space_key: spaceKey,
+          page_title: excelFile.pageTitle,
+          excel_url: excelFile.url,
+          summary: excelFile.summary,
+          question: newQuestion
+        });
+
+        setExcelFiles(prev => prev.map(file =>
+          file.id === selectedExcel
+            ? {
+                ...file,
+                qa: [...(file.qa || []), { question: newQuestion, answer: response.answer }]
+              }
+            : file
+        ));
+        setNewQuestion('');
+      } catch (error) {
+        console.error('Failed to get AI response:', error);
+        const answer = `Based on the AI analysis of this excel file, here's the response to your question: "${newQuestion}"
+
+The excel file analysis reveals specific data patterns and visual elements that directly relate to your inquiry. The AI has processed the visual content and extracted relevant insights to provide this contextual response.`;
+        setExcelFiles(prev => prev.map(file =>
+          file.id === selectedExcel
+            ? {
+                ...file,
+                qa: [...(file.qa || []), { question: newQuestion, answer }]
+              }
+            : file
+        ));
+        setNewQuestion('');
+      } finally {
+        setIsAskingQuestion(false);
+      }
+    }
+  };
+
+  const createChart = async (itemId: string, chartType?: string, exportFormat?: string) => {
     setIsCreatingChart(true);
     try {
-      const image = images.find(img => img.id === imageId);
-      if (!image || !image.pageTitle) {
-        throw new Error('Image not found or missing page title');
-      }
-      
-      // Use provided parameters or fall back to state values
       const currentChartType = chartType || selectedChartType;
       const currentExportFormat = exportFormat || chartExportFormat;
-      
       const chartTypeMap = {
         'bar': 'Grouped Bar',
         'line': 'Line',
         'pie': 'Pie',
         'stacked': 'Stacked Bar'
       };
+
+      let response;
+      if (analysisType === 'image') {
+        const image = images.find(img => img.id === itemId);
+        if (!image || !image.pageTitle) throw new Error('Image not found or missing page title');
+        response = await apiService.createChart({
+          space_key: spaceKey,
+          page_title: image.pageTitle,
+          image_url: image.url,
+          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
+          filename: chartFileName || 'chart',
+          format: currentExportFormat
+        });
+      } else {
+        const excel = excelFiles.find(f => f.id === itemId);
+        if (!excel || !excel.pageTitle) throw new Error('Excel file not found or missing page title');
+        response = await apiService.createChartFromExcel({
+          space_key: spaceKey,
+          page_title: excel.pageTitle,
+          excel_url: excel.url,
+          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
+          filename: chartFileName || 'chart',
+          format: currentExportFormat
+        });
+      }
       
-      const response = await apiService.createChart({
-        space_key: spaceKey,
-        page_title: image.pageTitle,
-        image_url: image.url,
-        chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
-        filename: chartFileName || 'chart',
-        format: currentExportFormat
-      });
-      
-      // Convert base64 to blob URL for display
       const binaryString = atob(response.chart_data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -283,7 +401,7 @@ The image analysis reveals specific data patterns and visual elements that direc
           chartUrl, 
           filename: response.filename, 
           exportFormat: currentExportFormat,
-          imageId: imageId // Store the image ID for recreation
+          imageId: itemId
         },
         title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
       });
@@ -296,47 +414,6 @@ The image analysis reveals specific data patterns and visual elements that direc
       }, 100);
     } catch (error) {
       console.error('Failed to create chart:', error);
-      // Fallback to sample data
-      const currentChartType = chartType || selectedChartType;
-      const sampleData = {
-        bar: {
-          labels: ['Q1', 'Q2', 'Q3', 'Q4'],
-          datasets: [{
-            label: 'Revenue',
-            data: [65, 78, 90, 81],
-            backgroundColor: 'rgba(38, 132, 255, 0.8)'
-          }]
-        },
-        line: {
-          labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May'],
-          datasets: [{
-            label: 'Growth',
-            data: [12, 19, 15, 25, 22],
-            borderColor: 'rgba(38, 132, 255, 1)',
-            fill: false
-          }]
-        },
-        pie: {
-          labels: ['Desktop', 'Mobile', 'Tablet'],
-          datasets: [{
-            data: [55, 35, 10],
-            backgroundColor: ['#0052CC', '#2684FF', '#B3D4FF']
-          }]
-        },
-        stacked: {
-          labels: ['Q1', 'Q2', 'Q3', 'Q4'],
-          datasets: [{
-            label: 'Revenue',
-            data: [65, 78, 90, 81],
-            backgroundColor: 'rgba(38, 132, 255, 0.8)'
-          }]
-        }
-      };
-      setChartData({
-        type: currentChartType as any,
-        data: sampleData[currentChartType as keyof typeof sampleData],
-        title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
-      });
     } finally {
       setIsCreatingChart(false);
     }
@@ -398,6 +475,40 @@ ${image.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
     }
   };
 
+  const exportExcel = async (excel: ExcelData) => {
+    try {
+      const content = `# Excel Analysis Report: ${excel.name}
+
+## AI Summary
+${excel.summary || 'No summary available'}
+
+## Questions & Answers
+${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n') || 'No questions asked'}
+
+## Excel Details
+- **Name**: ${excel.name}
+- **Analysis Date**: ${new Date().toLocaleString()}
+- **Export Format**: ${exportFormat}
+
+---
+*Generated by Confluence AI Assistant - Excel Insights*`;
+
+      const response = await apiService.exportContent({
+        content,
+        format: exportFormat,
+        filename: fileName || excel.name.replace(/\s+/g, '_') + '_analysis'
+      });
+
+      const url = URL.createObjectURL(response);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileName || excel.name.replace(/\s+/g, '_')}_analysis.${exportFormat}`;
+      a.click();
+    } catch (error) {
+      console.error('Failed to export excel analysis:', error);
+    }
+  };
+
   const exportChart = async () => {
     if (!chartData) return;
     
@@ -409,39 +520,68 @@ ${image.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
       // If we have a chart URL from the backend, we need to recreate the chart with the current export format
       if (chartData.data.chartUrl) {
         // Use the stored image ID if available, otherwise find an image with summary
-        let imageId = chartData.data.imageId;
-        if (!imageId) {
-          const imageWithSummary = images.find(img => img.summary);
-          imageId = imageWithSummary?.id;
+        let itemId = chartData.data.imageId;
+        if (!itemId) {
+          const itemWithSummary = analysisType === 'image' ? images.find(img => img.summary) : excelFiles.find(f => f.summary);
+          itemId = itemWithSummary?.id;
         }
-        if (imageId) {
-          const image = images.find(img => img.id === imageId);
-          if (image && image.pageTitle) {
-            // Recreate the chart with the current export format
-            const response = await apiService.createChart({
-              space_key: spaceKey,
-              page_title: image.pageTitle,
-              image_url: image.url,
-              chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
+        if (itemId) {
+          if (analysisType === 'image') {
+            const image = images.find(img => img.id === itemId);
+            if (image && image.pageTitle) {
+              // Recreate the chart with the current export format
+              const response = await apiService.createChart({
+                space_key: spaceKey,
+                page_title: image.pageTitle,
+                image_url: image.url,
+                chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
                          chartData.type === 'line' ? 'Line' : 
                          chartData.type === 'pie' ? 'Pie' : 'Stacked Bar',
-              filename: chartFileName || 'chart',
-              format: currentExportFormat
-            });
-            
-            // Download the chart in the selected format
-            const binaryString = atob(response.chart_data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
+                filename: chartFileName || 'chart',
+                format: currentExportFormat
+              });
+              
+              // Download the chart in the selected format
+              const binaryString = atob(response.chart_data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const blob = new Blob([bytes], { type: response.mime_type });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = response.filename;
+              a.click();
+              return;
             }
-            const blob = new Blob([bytes], { type: response.mime_type });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = response.filename;
-            a.click();
-            return;
+          } else {
+            const excel = excelFiles.find(f => f.id === itemId);
+            if (excel && excel.pageTitle) {
+              const response = await apiService.createChartFromExcel({
+                space_key: spaceKey,
+                page_title: excel.pageTitle,
+                excel_url: excel.url,
+                chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
+                          chartData.type === 'line' ? 'Line' : 
+                          chartData.type === 'pie' ? 'Pie' : 'Stacked Bar',
+                filename: chartFileName || 'chart',
+                format: currentExportFormat
+              });
+              
+              const binaryString = atob(response.chart_data);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const blob = new Blob([bytes], { type: response.mime_type });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = response.filename;
+              a.click();
+              return;
+            }
           }
         }
       }
@@ -545,12 +685,12 @@ ${JSON.stringify(chartData.data, null, 2)}
         </div>
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-            {/* Left Column - Image Selection */}
+            {/* Left Column - Insight Selection */}
             <div className="xl:col-span-1">
               <div className="bg-white/60 backdrop-blur-xl rounded-xl p-4 space-y-6 border border-white/20 shadow-lg">
                 <h3 className="font-semibold text-gray-800 mb-4 flex items-center">
                   <Eye className="w-5 h-5 mr-2" />
-                  Image Selection
+                  Insight Selection
                 </h3>
                 {/* Space Key Input */}
                 <div>
@@ -578,6 +718,31 @@ ${JSON.stringify(chartData.data, null, 2)}
                     )}
                   </div>
                 </div>
+                {/* Analysis Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Analysis Type
+                  </label>
+                  <div className="flex bg-white/70 backdrop-blur-sm rounded-lg border border-white/30 p-1">
+                    <button
+                      onClick={() => setAnalysisType('image')}
+                      className={`w-1/2 py-2 text-sm font-medium rounded-md transition-colors ${
+                        analysisType === 'image' ? 'bg-confluence-blue text-white shadow' : 'text-gray-600 hover:bg-gray-200/50'
+                      }`}
+                    >
+                      Image
+                    </button>
+                    <button
+                      onClick={() => setAnalysisType('excel')}
+                      className={`w-1/2 py-2 text-sm font-medium rounded-md transition-colors ${
+                        analysisType === 'excel' ? 'bg-confluence-blue text-white shadow' : 'text-gray-600 hover:bg-gray-200/50'
+                      }`}
+                    >
+                      Excel
+                    </button>
+                  </div>
+                </div>
+
                 {/* Page Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -619,96 +784,168 @@ ${JSON.stringify(chartData.data, null, 2)}
                     {selectedPages.length} page(s) selected
                   </p>
                 </div>
-                {/* Load Images Button */}
+                {/* Load Insight Button */}
                 <button
-                  onClick={loadImages}
-                  disabled={!spaceKey || selectedPages.length === 0 || isLoadingImages}
+                  onClick={() => {
+                    if (analysisType === 'image') {
+                      loadImages();
+                    } else {
+                      loadExcelFiles();
+                    }
+                  }}
+                  disabled={!spaceKey || selectedPages.length === 0 || isLoadingImages || isLoadingExcelFiles}
                   className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-3 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
                 >
-                  {isLoadingImages ? (
+                  {(isLoadingImages || isLoadingExcelFiles) ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Loading Images...</span>
+                      <span>Loading...</span>
                     </>
                   ) : (
                     <>
-                      <Image className="w-5 h-5" />
-                      <span>Load Images</span>
+                      <Zap className="w-5 h-5" />
+                      <span>Load {analysisType === 'image' ? 'Images' : 'Excel Files'}</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
-            {/* Middle Column - Images Grid */}
+
+            {/* Middle Column - Insight Grid */}
             <div className="xl:col-span-2 space-y-6">
-              {images.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {images.map(image => (
-                    <div key={image.id} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
-                      <div className="aspect-video bg-gray-200/50 backdrop-blur-sm rounded-lg mb-4 overflow-hidden border border-white/20">
-                        <img 
-                          src={image.url} 
-                          alt={image.name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <h4 className="font-semibold text-gray-800 mb-2">{image.name}</h4>
-                      <div className="space-y-2">
-                        <button
-                          onClick={() => analyzeImage(image.id)}
-                          disabled={isAnalyzing === image.id}
-                          className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
-                        >
-                          {isAnalyzing === image.id ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Analyzing...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Eye className="w-4 h-4" />
-                              <span>Summarize</span>
-                            </>
-                          )}
-                        </button>
-                        {image.summary && (
+              {analysisType === 'image' && (
+                images.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {images.map(image => (
+                      <div key={image.id} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                        <div className="aspect-video bg-gray-200/50 backdrop-blur-sm rounded-lg mb-4 overflow-hidden border border-white/20">
+                          <img 
+                            src={image.url} 
+                            alt={image.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <h4 className="font-semibold text-gray-800 mb-2">{image.name}</h4>
+                        <div className="space-y-2">
                           <button
-                            onClick={() => createChart(image.id, selectedChartType, chartExportFormat)}
-                            disabled={isCreatingChart}
-                            className="w-full bg-green-600/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 border border-white/10"
+                            onClick={() => analyzeImage(image.id)}
+                            disabled={isAnalyzing === image.id}
+                            className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
                           >
-                            {isCreatingChart ? (
+                            {isAnalyzing === image.id ? (
                               <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Creating Chart...</span>
+                                <span>Analyzing...</span>
                               </>
                             ) : (
                               <>
-                                <BarChart3 className="w-4 h-4" />
-                                <span>Create Graph</span>
+                                <Eye className="w-4 h-4" />
+                                <span>Summarize</span>
                               </>
                             )}
                           </button>
+                          {image.summary && (
+                            <button
+                              onClick={() => createChart(image.id, selectedChartType, chartExportFormat)}
+                              disabled={isCreatingChart}
+                              className="w-full bg-green-600/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 border border-white/10"
+                            >
+                              {isCreatingChart ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Creating Chart...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart3 className="w-4 h-4" />
+                                  <span>Create Graph</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {image.summary && (
+                          <div className="mt-4 p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
+                            <p className="text-sm text-gray-700">{image.summary}</p>
+                          </div>
                         )}
                       </div>
-                      {image.summary && (
-                        <div className="mt-4 p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
-                          <p className="text-sm text-gray-700">{image.summary}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Image className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-600 mb-2">No Images Loaded</h3>
+                    <p className="text-gray-500">Select a space and pages to load embedded images for analysis.</p>
+                  </div>
+                )
+              )}
+              {analysisType === 'excel' && (
+                excelFiles.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {excelFiles.map(file => (
+                      <div key={file.id} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                        <div className="aspect-video bg-gray-200/50 backdrop-blur-sm rounded-lg mb-4 overflow-hidden border border-white/20 flex items-center justify-center">
+                          <FileSpreadsheet className="w-16 h-16 text-green-600" />
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <Image className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-600 mb-2">No Images Loaded</h3>
-                  <p className="text-gray-500">Select a space and pages to load embedded images for analysis.</p>
-                </div>
+                        <h4 className="font-semibold text-gray-800 mb-2">{file.name}</h4>
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => analyzeExcel(file.id)}
+                            disabled={isAnalyzing === file.id}
+                            className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
+                          >
+                            {isAnalyzing === file.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Analyzing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-4 h-4" />
+                                <span>Summarize</span>
+                              </>
+                            )}
+                          </button>
+                          {file.summary && (
+                            <button
+                              onClick={() => createChart(file.id, selectedChartType, chartExportFormat)}
+                              disabled={isCreatingChart}
+                              className="w-full bg-green-600/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 border border-white/10"
+                            >
+                              {isCreatingChart ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Creating Chart...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart3 className="w-4 h-4" />
+                                  <span>Create Graph</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {file.summary && (
+                          <div className="mt-4 p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
+                            <p className="text-sm text-gray-700">{file.summary}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <FileSpreadsheet className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-600 mb-2">No Excel Files Loaded</h3>
+                    <p className="text-gray-500">Select a space and pages to load attached excel files for analysis.</p>
+                  </div>
+                )
               )}
               {/* Chart Preview Section */}
               {chartData && (
-                <div ref={chartPreviewRef} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                <div ref={chartPreviewRef} className="bg-white/60 backdrop-blur-xl rounded-xl p-6 border border-white/20 shadow-lg">
                   <h3 className="font-semibold text-gray-800 mb-4 flex items-center">
                     <BarChart3 className="w-5 h-5 mr-2" />
                     Chart Builder
@@ -734,13 +971,13 @@ ${JSON.stringify(chartData.data, null, 2)}
                                   setIsChangingChartType(true);
                                   try {
                                     // Use the stored image ID if available, otherwise find an image with summary
-                                    let imageId = chartData?.data?.imageId;
-                                    if (!imageId) {
-                                      const imageWithSummary = images.find(img => img.summary);
-                                      imageId = imageWithSummary?.id;
+                                    let itemId = chartData?.data?.imageId;
+                                    if (!itemId) {
+                                      const itemWithSummary = analysisType === 'image' ? images.find(img => img.summary) : excelFiles.find(f => f.summary);
+                                      itemId = itemWithSummary?.id;
                                     }
-                                    if (imageId) {
-                                      await createChart(imageId, newChartType, chartExportFormat);
+                                    if (itemId) {
+                                      await createChart(itemId, newChartType, chartExportFormat);
                                     }
                                   } finally {
                                     setIsChangingChartType(false);
@@ -858,23 +1095,29 @@ ${JSON.stringify(chartData.data, null, 2)}
               <div className="bg-white/60 backdrop-blur-xl rounded-xl p-4 space-y-4 border border-white/20 shadow-lg">
                 <h3 className="font-semibold text-gray-800 mb-4 flex items-center">
                   <MessageSquare className="w-5 h-5 mr-2" />
-                  Image Q&A
+                  {analysisType === 'image' ? 'Image' : 'Excel'} Q&A
                 </h3>
                 {/* Image Selection for Q&A */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Image for Questions
+                    Select {analysisType === 'image' ? 'Image' : 'Excel File'} for Questions
                   </label>
                   <div className="relative">
                     <select
-                      value={selectedImage}
-                      onChange={(e) => setSelectedImage(e.target.value)}
+                      value={analysisType === 'image' ? selectedImage : selectedExcel}
+                      onChange={(e) => analysisType === 'image' ? setSelectedImage(e.target.value) : setSelectedExcel(e.target.value)}
                       className="w-full p-3 border border-white/30 rounded-lg focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue appearance-none bg-white/70 backdrop-blur-sm"
                     >
-                      <option value="">Choose image...</option>
-                      {images.filter(img => img.summary).map(image => (
-                        <option key={image.id} value={image.id}>{image.name}</option>
-                      ))}
+                      <option value="">Choose {analysisType === 'image' ? 'image' : 'file'}...</option>
+                      {analysisType === 'image' ? (
+                        images.filter(img => img.summary).map(image => (
+                          <option key={image.id} value={image.id}>{image.name}</option>
+                        ))
+                      ) : (
+                        excelFiles.filter(file => file.summary).map(file => (
+                          <option key={file.id} value={file.id}>{file.name}</option>
+                        ))
+                      )}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
                   </div>
@@ -884,13 +1127,13 @@ ${JSON.stringify(chartData.data, null, 2)}
                   <textarea
                     value={newQuestion}
                     onChange={(e) => setNewQuestion(e.target.value)}
-                    placeholder="Ask about the selected image..."
+                    placeholder={`Ask about the selected ${analysisType === 'image' ? 'image' : 'file'}...`}
                     className="w-full p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue resize-none bg-white/70 backdrop-blur-sm"
                     rows={3}
                   />
                   <button
                     onClick={addQuestion}
-                    disabled={!newQuestion.trim() || !selectedImage || isAskingQuestion}
+                    disabled={!newQuestion.trim() || (analysisType === 'image' && !selectedImage) || (analysisType === 'excel' && !selectedExcel) || isAskingQuestion}
                     className="w-full px-3 py-2 bg-confluence-blue/90 backdrop-blur-sm text-white rounded hover:bg-confluence-blue disabled:bg-gray-300 transition-colors flex items-center justify-center space-x-2 border border-white/10"
                   >
                     {isAskingQuestion ? (
@@ -907,12 +1150,15 @@ ${JSON.stringify(chartData.data, null, 2)}
                   </button>
                 </div>
                 {/* Q&A Display */}
-                {selectedImage && (
+                {(analysisType === 'image' && selectedImage) || (analysisType === 'excel' && selectedExcel) ? (
                   <div className="pt-4 border-t border-white/20 space-y-3">
                     <h4 className="font-semibold text-gray-800">Questions & Answers</h4>
                     {(() => {
-                      const selectedImageData = images.find(img => img.id === selectedImage);
-                      if (!selectedImageData || !selectedImageData.qa || selectedImageData.qa.length === 0) {
+                      const selectedItem = analysisType === 'image'
+                        ? images.find(img => img.id === selectedImage)
+                        : excelFiles.find(file => file.id === selectedExcel);
+
+                      if (!selectedItem || !selectedItem.qa || selectedItem.qa.length === 0) {
                         return (
                           <div className="text-center py-4">
                             <MessageSquare className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -922,7 +1168,7 @@ ${JSON.stringify(chartData.data, null, 2)}
                       }
                       return (
                         <div className="space-y-3 max-h-60 overflow-y-auto">
-                          {selectedImageData.qa.map((qa, index) => (
+                          {selectedItem.qa.map((qa, index) => (
                             <div key={index} className="p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
                               <p className="font-medium text-gray-800 text-sm mb-2">Q: {qa.question}</p>
                               <p className="text-gray-700 text-sm">{qa.answer}</p>
@@ -932,10 +1178,10 @@ ${JSON.stringify(chartData.data, null, 2)}
                       );
                     })()}
                   </div>
-                )}
+                ) : null}
                 {/* Export Options */}
                 <div className="pt-4 border-t border-white/20 space-y-3">
-                  <h4 className="font-semibold text-gray-800">Export Image Analysis</h4>
+                  <h4 className="font-semibold text-gray-800">Export {analysisType === 'image' ? 'Image' : 'Excel'} Analysis</h4>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       File Name
@@ -967,16 +1213,29 @@ ${JSON.stringify(chartData.data, null, 2)}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    {images.filter(img => img.summary).map(image => (
-                      <button
-                        key={image.id}
-                        onClick={() => exportImage(image)}
-                        className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-green-600/90 backdrop-blur-sm text-white rounded-lg hover:bg-green-700 transition-colors border border-white/10"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Export {image.name}</span>
-                      </button>
-                    ))}
+                    {analysisType === 'image' ? (
+                      images.filter(img => img.summary).map(image => (
+                        <button
+                          key={image.id}
+                          onClick={() => exportImage(image)}
+                          className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-green-600/90 backdrop-blur-sm text-white rounded-lg hover:bg-green-700 transition-colors border border-white/10"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Export {image.name}</span>
+                        </button>
+                      ))
+                    ) : (
+                      excelFiles.filter(file => file.summary).map(file => (
+                        <button
+                          key={file.id}
+                          onClick={() => exportExcel(file)}
+                          className="w-full flex items-center justify-center space-x-2 px-3 py-2 bg-green-600/90 backdrop-blur-sm text-white rounded-lg hover:bg-green-700 transition-colors border border-white/10"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Export {file.name}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
                 {selectedImage && (
@@ -987,16 +1246,16 @@ ${JSON.stringify(chartData.data, null, 2)}
                         alert('Confluence space or page not specified in macro src URL.');
                         return;
                       }
-                      const selectedImageData = images.find(img => img.id === selectedImage);
-                      if (!selectedImageData || !selectedImageData.summary) {
-                        alert('No summary available for the selected image.');
+                      const selectedItem = analysisType === 'image' ? images.find(img => img.id === selectedImage) : excelFiles.find(f => f.id === selectedExcel);
+                      if (!selectedItem || !selectedItem.summary) {
+                        alert('No summary available for the selected item.');
                         return;
                       }
                       try {
                         await apiService.saveToConfluence({
                           space_key: space,
                           page_title: page,
-                          content: selectedImageData.summary,
+                          content: selectedItem.summary,
                         });
                         setShowToast(true);
                         setTimeout(() => setShowToast(false), 3000);

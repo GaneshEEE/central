@@ -134,6 +134,35 @@ export interface ChartResponse {
   filename: string;
 }
 
+export interface ExcelFile {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface ExcelRequest {
+  space_key: string;
+  page_title: string;
+  excel_url: string;
+}
+
+export interface ExcelSummaryRequest {
+  space_key: string;
+  page_title: string;
+  excel_url: string;
+  summary: string;
+  question: string;
+}
+
+export interface ChartFromExcelRequest {
+  space_key: string;
+  page_title: string;
+  excel_url: string;
+  chart_type: string;
+  filename: string;
+  format: string;
+}
+
 export interface SaveToConfluenceRequest {
   space_key: string;
   page_title: string;
@@ -221,8 +250,19 @@ class ApiService {
     return this.makeRequest<{ images: string[] }>(`/images/${spaceKey}/${encodeURIComponent(pageTitle)}`);
   }
 
+  async getExcelFiles(spaceKey: string, pageTitle: string): Promise<{ excel_files: ExcelFile[] }> {
+    return this.makeRequest<{ excel_files: ExcelFile[] }>(`/excel-files/${spaceKey}/${encodeURIComponent(pageTitle)}`);
+  }
+
   async imageSummary(request: ImageRequest): Promise<ImageResponse> {
     return this.makeRequest<ImageResponse>('/image-summary', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async excelSummary(request: ExcelRequest): Promise<ImageResponse> {
+    return this.makeRequest<ImageResponse>('/excel-summary', {
       method: 'POST',
       body: JSON.stringify(request),
     });
@@ -235,8 +275,22 @@ class ApiService {
     });
   }
 
+  async excelQA(request: ExcelSummaryRequest): Promise<ImageQAResponse> {
+    return this.makeRequest<ImageQAResponse>('/excel-qa', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
   async createChart(request: ChartRequest): Promise<ChartResponse> {
     return this.makeRequest<ChartResponse>('/create-chart', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async createChartFromExcel(request: ChartFromExcelRequest): Promise<ChartResponse> {
+    return this.makeRequest<ChartResponse>('/create-chart-from-excel', {
       method: 'POST',
       body: JSON.stringify(request),
     });

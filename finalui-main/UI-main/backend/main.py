@@ -1049,47 +1049,66 @@ async def get_images(space_key: Optional[str] = None, page_title: str = ""):
 
 @app.post("/image-summary")
 async def image_summary(request: ImageRequest, req: Request):
-    """Generate AI summary for an image"""
+    """Generate AI summary for any file type (image, Excel, PDF, etc.)"""
     try:
         api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
         genai.configure(api_key=api_key)
         ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
         confluence = init_confluence()
         space_key = auto_detect_space(confluence, getattr(request, 'space_key', None))
-        
-        # Download image
+
+        # Download file (any format)
         auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
         response = requests.get(request.image_url, auth=auth)
         if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch image")
-        
-        image_bytes = response.content
-        
-        # Upload to Gemini
+            raise HTTPException(status_code=404, detail="Failed to fetch file")
+        file_bytes = response.content
+        import os
         import tempfile
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
-            tmp.write(image_bytes)
+        _, ext = os.path.splitext(request.image_url)
+        ext = ext.lower()
+        # Save to temp file with correct extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_bytes)
             tmp.flush()
+            # Upload to Gemini (auto-detect mime)
             uploaded = genai.upload_file(
                 path=tmp.name,
-                mime_type="image/png",
-                display_name=f"confluence_image_{request.page_title}.png"
+                mime_type=None,
+                display_name=f"confluence_file_{request.page_title}{ext}"
             )
-        
-        prompt = (
-            "You are analyzing an image from documentation. "
-            "If the image is an Excel sheet or table, summarize the main data, trends, and any key figures. "
-            "If it's a chart or graph, explain what is shown in detail. "
-            "If it's code, summarize what the code does. "
-            "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
-        )
-        
+        # Prompt based on file type
+        if ext in ['.csv', '.xlsx']:
+            prompt = (
+                "You are analyzing a spreadsheet or table file. Summarize the main data, trends, and key figures. "
+                "If possible, mention column names and any notable patterns. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.pdf']:
+            prompt = (
+                "You are analyzing a PDF document. Summarize the main content, topics, and any key findings. "
+                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.docx', '.doc']:
+            prompt = (
+                "You are analyzing a Word document. Summarize the main content, topics, and any key findings. "
+                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+            prompt = (
+                "You are analyzing an image from documentation. "
+                "If the image is a chart or graph, explain what is shown in detail. "
+                "If it's code, summarize what the code does. "
+                "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
+            )
+        else:
+            prompt = (
+                "You are analyzing a file from documentation. Summarize the main content and any key findings. "
+                "Provide an informative analysis in 1 paragraph."
+            )
         response = ai_model.generate_content([uploaded, prompt])
         summary = response.text.strip()
-        grounding = "Grounding: This answer is based on the provided image content."
-        
+        grounding = f"Grounding: This answer is based on the provided file content ({ext if ext else 'unknown type'})."
         return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,37 +1,3 @@
-@app.get("/excel/{space_key}/{page_title}")
-async def get_excel(space_key: str, page_title: str):
-    """
-    Fetch Excel file from Confluence page, summarize, and return for chart builder.
-    """
-    import pandas as pd
-    import io
-    confluence = init_confluence()
-    space_key = auto_detect_space(confluence, space_key)
-    pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
-    page = next((p for p in pages if p["title"].strip().lower() == page_title.strip().lower()), None)
-    if not page:
-        raise HTTPException(status_code=404, detail=f"Page '{page_title}' not found")
-    page_id = page["id"]
-    attachments = confluence.get(f"/rest/api/content/{page_id}/child/attachment?limit=50")
-    excel_attachment = None
-    for att in attachments.get("results", []):
-        if att["title"].lower().endswith((".xlsx", ".xls")):
-            excel_attachment = att
-            break
-    if not excel_attachment:
-        raise HTTPException(status_code=404, detail="No Excel file found on this page.")
-    excel_url = excel_attachment["_links"]["download"]
-    full_url = f"{os.getenv('CONFLUENCE_BASE_URL').rstrip('/')}{excel_url}"
-    auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-    response = requests.get(full_url, auth=auth)
-    if response.status_code != 200:
-        raise HTTPException(status_code=404, detail="Failed to fetch Excel file")
-    excel_bytes = io.BytesIO(response.content)
-    df = pd.read_excel(excel_bytes)
-    summary = df.describe(include='all').to_dict()
-    data = df.to_dict(orient='records')
-    columns = list(df.columns)
-    return {"summary": summary, "data": data, "columns": columns, "filename": excel_attachment["title"]}
 import os
 import io
 import re

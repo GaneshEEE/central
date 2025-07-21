@@ -1412,7 +1412,10 @@ async def create_chart_from_excel(request: ChartFromExcelRequest, req: Request):
         elif request.chart_type == "Line":
             df.plot(kind='line', ax=plt.gca())
         elif request.chart_type == "Pie":
-            df.iloc[0].plot(kind='pie', autopct='%1.1f%%', ax=plt.gca())
+            # Assume first column is labels, second column is values
+            labels = df.iloc[:, 0]
+            values = df.iloc[:, 1]
+            plt.pie(values, labels=labels, autopct='%1.1f%%')
         elif request.chart_type == "Stacked Bar":
             df.plot(kind='bar', stacked=True, ax=plt.gca())
 

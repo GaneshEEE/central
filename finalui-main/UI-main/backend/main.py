@@ -1093,7 +1093,8 @@ async def image_summary(request: ImageRequest, req: Request):
             )
         
         prompt = (
-            "You are analyzing a technical image from a documentation page. "
+            "You are analyzing an image from documentation. "
+            "If the image is an Excel sheet or table, summarize the main data, trends, and any key figures. "
             "If it's a chart or graph, explain what is shown in detail. "
             "If it's code, summarize what the code does. "
             "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
@@ -1189,10 +1190,11 @@ async def create_chart(request: ChartRequest, req: Request):
             )
         
         graph_prompt = (
-            "You're looking at a Likert-style bar chart image or table. Extract the full numeric table represented by the chart.\n"
-            "Return only the raw CSV table: no markdown, no comments, no code blocks.\n"
-            "The first column must be the response category (e.g., Strongly Agree), followed by columns for group counts (e.g., Students, Lecturers, Staff, Total).\n"
-            "Ensure all values are numeric and the CSV is properly aligned. Do NOT summarize—just output the table."
+            "You are looking at an image of an Excel sheet or a table. "
+            "Extract the full table data as CSV. "
+            "Return only the raw CSV table: no markdown, no comments, no code blocks. "
+            "The first row should be the header. "
+            "Ensure all values are properly aligned in columns. Do NOT summarize—just output the table."
         )
         
         graph_response = ai_model.generate_content([uploaded_img, graph_prompt])

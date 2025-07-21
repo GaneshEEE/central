@@ -27,6 +27,9 @@ interface ChartData {
 }
 
 const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect, autoSpaceKey, isSpaceAutoConnected }) => {
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedSummary, setUploadedSummary] = useState<string>('');
+  const [isUploading, setIsUploading] = useState(false);
   const [spaceKey, setSpaceKey] = useState<string>('');
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
   const [images, setImages] = useState<ImageData[]>([]);
@@ -606,7 +609,64 @@ ${JSON.stringify(chartData.data, null, 2)}
                     {selectedPages.length} page(s) selected
                   </p>
                 </div>
-                {/* Load Images Button */}
+                {/* File Upload & Load Button */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Upload a file (csv, pdf, docx, png, etc.)</label>
+                  <input
+                    type="file"
+                    accept=".csv,.pdf,.docx,.doc,.png,.jpg,.jpeg,.gif,.bmp,.xlsx,.txt"
+                    onChange={e => setUploadedFile(e.target.files?.[0] || null)}
+                    className="w-full p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
+                  />
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!uploadedFile) return;
+                    setIsUploading(true);
+                    setUploadedSummary('');
+                    try {
+                      // Prepare FormData for upload
+                      const formData = new FormData();
+                      formData.append('file', uploadedFile);
+                      // Use fetch directly for file upload
+                      const response = await fetch('https://central-1rua.onrender.com/upload-file', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                          'x-api-key': localStorage.getItem('selectedApiKeyId') || ''
+                        }
+                      });
+                      if (!response.ok) throw new Error('Failed to upload file');
+                      const data = await response.json();
+                      setUploadedSummary(data.summary || 'No summary returned');
+                    } catch (err) {
+                      setUploadedSummary('Error uploading or summarizing file.');
+                    } finally {
+                      setIsUploading(false);
+                    }
+                  }}
+                  disabled={!uploadedFile || isUploading}
+                  className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-3 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10 mb-2"
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Uploading & Summarizing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Image className="w-5 h-5" />
+                      <span>Load & Summarize File</span>
+                    </>
+                  )}
+                </button>
+                {uploadedSummary && (
+                  <div className="mt-2 p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
+                    <h4 className="font-semibold text-gray-800 mb-2">File Summary</h4>
+                    <p className="text-sm text-gray-700 whitespace-pre-line">{uploadedSummary}</p>
+                  </div>
+                )}
+                {/* Existing Load Images Button */}
                 <button
                   onClick={loadImages}
                   disabled={!spaceKey || selectedPages.length === 0 || isLoadingImages}
@@ -620,7 +680,7 @@ ${JSON.stringify(chartData.data, null, 2)}
                   ) : (
                     <>
                       <Image className="w-5 h-5" />
-                      <span>Load Images</span>
+                      <span>Load Images from Confluence</span>
                     </>
                   )}
                 </button>

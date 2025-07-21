@@ -844,77 +844,58 @@ async def test_support(request: TestRequest, req: Request):
         confluence = init_confluence()
         space_key = auto_detect_space(confluence, getattr(request, 'space_key', None))
         
-        # Get code page
-        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=50)
-        code_page = next((p for p in pages if p["title"] == request.code_page_title), None)
-        
-        if not code_page:
-            raise HTTPException(status_code=400, detail="Code page not found")
-        
-        print(f"Found code page: {code_page['title']}")  # Debug log
-        
-        code_data = confluence.get_page_by_id(code_page["id"], expand="body.storage")
-        code_content = code_data["body"]["storage"]["value"]
-        
-        print(f"Code content length: {len(code_content)}")  # Debug log
-        
-        # Generate test strategy
-        prompt_strategy = f"""The following is a code snippet:\n\n{code_content[:2000]}\n\nPlease generate a **structured test strategy** for the above code using the following format. 
+        # Download file (any format)
+        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
+        response = requests.get(request.image_url, auth=auth)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Failed to fetch file")
+        file_bytes = response.content
+        import os
+        _, ext = os.path.splitext(request.image_url)
+        ext = ext.lower()
+        # Save to temp file with correct extension
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_bytes)
+            tmp.flush()
+            # Upload to Gemini (auto-detect mime)
+            uploaded = genai.upload_file(
+                path=tmp.name,
+                mime_type=None,
+                display_name=f"confluence_file_{request.page_title}{ext}"
+            )
+        # Prompt based on file type
+        if ext in ['.csv', '.xlsx']:
+            prompt = (
+                "You are analyzing a spreadsheet or table file. Summarize the main data, trends, and key figures. "
+                "If possible, mention column names and any notable patterns. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.pdf']:
+            prompt = (
+                "You are analyzing a PDF document. Summarize the main content, topics, and any key findings. "
+                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.docx', '.doc']:
+            prompt = (
+                "You are analyzing a Word document. Summarize the main content, topics, and any key findings. "
+                "If possible, mention sections or headings. Provide an informative analysis in 1 paragraph."
+            )
+        elif ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+            prompt = (
+                "You are analyzing an image from documentation. "
+                "If the image is a chart or graph, explain what is shown in detail. "
+                "If it's code, summarize what the code does. "
+                "Avoid mentioning filenames or metadata. Provide an informative analysis in 1 paragraph."
+            )
+        else:
+            prompt = (
+                "You are analyzing a file from documentation. Summarize the main content and any key findings. "
+                "Provide an informative analysis in 1 paragraph."
+            )
+        response = ai_model.generate_content([uploaded, prompt])
+        summary = response.text.strip()
+        grounding = f"Grounding: This answer is based on the provided file content ({ext if ext else 'unknown type'})."
+        return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
 
-Make sure each section heading is **clearly labeled** and includes a **percentage estimate** of total testing effort and the total of all percentage values across Unit Test, Integration Test, and End-to-End (E2E) Test must add up to exactly **100%**. Each subpoint should be short (1–2 lines max). Use bullet points for clarity.
-
----
-
-
-## Unit Test (xx%)
-- **Coverage Areas**:  
-  - What functions or UI elements are directly tested?  
-- **Edge Cases**:  
-  - List 2–3 specific edge conditions or unusual inputs.
-
-## Integration Test (xx%)
-- **Integrated Modules**:  
-  - What parts of the system work together and need testing as a unit?  
-- **Data Flow Validation**:  
-  - How does data move between components or layers?
-
-## End-to-End (E2E) Test (xx%)
-- **User Scenarios**:  
-  - Provide 2–3 user flows that simulate real usage.  
-- **System Dependencies**:  
-  - What systems, APIs, or services must be operational?
-
-## Test Data Management
-- **Data Requirements**:  
-  - What test data (e.g., users, tokens, inputs) is needed?  
-- **Data Setup & Teardown**:  
-  - How is test data created and removed?
-
-## Automation Strategy
-- **Frameworks/Tools**:  
-  - Recommend tools for each test level.  
-- **CI/CD Integration**:  
-  - How will tests be included in automated pipelines?
-
-## Risk Areas Identified
-- **Complex Logic**:  
-  - Highlight any logic that's error-prone or tricky.  
-- **Third-Party Dependencies**:  
-  - Any reliance on external APIs or libraries?  
-- **Security/Critical Flows**:  
-  - Mention any data protection or authentication flows.
-
-## Additional Considerations
-- **Security**:  
-  - Are there vulnerabilities or security-sensitive operations?  
-- **Accessibility**:  
-  - Are there any compliance or usability needs?  
-- **Performance**:  
-  - Should speed, responsiveness, or load handling be tested?
-
----
-
-Please format your response exactly like this structure, using proper markdown headings, short bullet points, and estimated test effort percentages. """
 
         response_strategy = ai_model.generate_content(prompt_strategy)
         strategy_text = response_strategy.text.strip()
@@ -924,7 +905,7 @@ Please format your response exactly like this structure, using proper markdown h
         # Generate cross-platform testing
         prompt_cross_platform = f"""You are a cross-platform UI testing expert. Analyze the following frontend code and generate a detailed cross-platform test strategy using the structure below. Your insights should be **relevant to the code**, not generic. Code:\n\n{code_content[:2000]}\n\nFollow the format strictly and customize values based on the code analysis. Avoid repeating default phrases — provide actual testing considerations derived from the code.
 
----
+
 
 
 ## Platform Coverage Assessment

@@ -24,6 +24,8 @@ from io import BytesIO
 import difflib
 import base64
 import ast
+import pandas as pd
+import tempfile
 
 # Load environment variables
 load_dotenv()
@@ -1341,6 +1343,42 @@ async def save_to_confluence(request: SaveToConfluenceRequest, req: Request):
         return {"message": "Page updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload-excel")
+async def upload_excel(file: UploadFile = File(...)):
+    """
+    Accept an Excel (.xlsx) or CSV file, extract the table, summarize, and return data for charting.
+    """
+    import pandas as pd
+    import tempfile
+
+    # Save uploaded file to a temp location
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file.filename) as tmp:
+        tmp.write(await file.read())
+        tmp.flush()
+        tmp_path = tmp.name
+
+    # Read Excel or CSV
+    try:
+        if file.filename.lower().endswith('.csv'):
+            df = pd.read_csv(tmp_path)
+        else:
+            df = pd.read_excel(tmp_path)
+    except Exception as e:
+        return {"error": f"Failed to read file: {str(e)}"}
+
+    # Summarize table (basic: show shape, columns, sample data)
+    summary = f"Table shape: {df.shape}\nColumns: {', '.join(map(str, df.columns))}\nSample data:\n{df.head().to_string(index=False)}"
+
+    # Convert to CSV for chart builder
+    csv_data = df.to_csv(index=False)
+
+    return {
+        "summary": summary,
+        "csv": csv_data,
+        "columns": list(df.columns),
+        "rows": df.to_dict(orient="records")
+    }
 
 @app.get("/test")
 async def test_endpoint():

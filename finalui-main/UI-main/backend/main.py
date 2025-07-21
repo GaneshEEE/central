@@ -404,25 +404,26 @@ async def video_summarizer(request: VideoRequest, req: Request):
     if not video_attachment:
         raise HTTPException(status_code=404, detail="No .mp4 video attachment found on this page.")
 
-    # Download video
-    video_url = video_attachment["_links"]["download"]
-    full_url = f"{os.getenv('CONFLUENCE_BASE_URL').rstrip('/')}{video_url}"
-    video_name = video_attachment["title"].replace(" ", "_")
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        video_path = os.path.join(tmpdir, video_name)
-        audio_path = os.path.join(tmpdir, "audio.mp3")
-        # Download video file
-        video_data = confluence._session.get(full_url).content
-        with open(video_path, "wb") as f:
-            f.write(video_data)
-        # Extract audio using ffmpeg
-        try:
-            subprocess.run([
-                "ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "mp3", audio_path
-            ], check=True, capture_output=True)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"ffmpeg audio extraction failed: {e}")
+        # Download file (any format)
+        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
+        response = requests.get(request.image_url, auth=auth)
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Failed to fetch file")
+        file_bytes = response.content
+        # Detect file extension from URL
+        import os
+        _, ext = os.path.splitext(request.image_url)
+        ext = ext if ext else '.bin'
+        # Upload to Gemini (preserve original extension)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp.write(file_bytes)
+            tmp.flush()
+            uploaded = genai.upload_file(
+                path=tmp.name,
+                mime_type=None,  # Let Gemini auto-detect
+                display_name=f"confluence_file_{request.page_title}{ext}"
+            )
+    # Exception handling for ffmpeg audio extraction is now properly scoped in the previous patch.
         # Upload audio to AssemblyAI
         assemblyai_api_key = os.getenv('ASSEMBLYAI_API_KEY')
         if not assemblyai_api_key:

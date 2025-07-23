@@ -377,7 +377,7 @@ The excel file analysis reveals specific data patterns and visual elements that 
       let chartTypeString = '';
       if (currentChartType === 'bar') chartTypeString = 'Grouped Bar';
       else if (currentChartType === 'line') chartTypeString = 'Line';
-      else if (currentChartType === 'pie') chartTypeString = 'Pie';
+      else if (currentChartType === 'pie') chartTypeString = 'Pie Chart'; // Fix: use 'Pie Chart' if backend expects this
       else if (currentChartType === 'stacked') chartTypeString = 'Stacked Bar';
 
       let response;
@@ -551,7 +551,7 @@ ${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                 image_url: image.url,
                 chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
                          chartData.type === 'line' ? 'Line' : 
-                         chartData.type === 'pie' ? 'Pie' : 'Stacked Bar',
+                         chartData.type === 'pie' ? 'Pie Chart' : 'Stacked Bar',
                 filename: chartFileName || 'chart',
                 format: currentExportFormat
               });
@@ -579,7 +579,7 @@ ${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                 excel_url: excel.url,
                 chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
                           chartData.type === 'line' ? 'Line' : 
-                          chartData.type === 'pie' ? 'Pie' : 'Stacked Bar',
+                          chartData.type === 'pie' ? 'Pie Chart' : 'Stacked Bar',
                 filename: chartFileName || 'chart',
                 format: currentExportFormat
               });

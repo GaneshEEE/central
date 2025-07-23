@@ -377,7 +377,7 @@ The excel file analysis reveals specific data patterns and visual elements that 
       let chartTypeString = '';
       if (currentChartType === 'bar') chartTypeString = 'Grouped Bar';
       else if (currentChartType === 'line') chartTypeString = 'Line';
-      else if (currentChartType === 'pie') chartTypeString = 'Pie';
+      else if (currentChartType === 'pie') chartTypeString = 'Pie'; // Ensure Pie is mapped for Excel
       else if (currentChartType === 'stacked') chartTypeString = 'Stacked Bar';
 
       let response;
@@ -412,11 +412,14 @@ The excel file analysis reveals specific data patterns and visual elements that 
       } else {
         const excel = excelFiles.find(f => f.id === itemId);
         if (!excel || !excel.pageTitle) throw new Error('Excel file not found or missing page title');
+        // Ensure Pie chart type is sent as 'Pie' for Excel
+        let excelChartTypeString = chartTypeString;
+        if (currentChartType === 'pie') excelChartTypeString = 'Pie';
         response = await apiService.createChartFromExcel({
           space_key: spaceKey,
           page_title: excel.pageTitle,
           excel_url: excel.url,
-          chart_type: chartTypeString,
+          chart_type: excelChartTypeString,
           filename: chartFileName || 'chart',
           format: currentExportFormat
         });

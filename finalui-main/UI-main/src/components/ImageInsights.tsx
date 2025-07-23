@@ -350,17 +350,35 @@ The excel file analysis reveals specific data patterns and visual elements that 
     }
   };
 
+  // --- Page Search State for Autocomplete ---
+  const [pageSearch, setPageSearch] = useState('');
+  const [showPageDropdown, setShowPageDropdown] = useState(false);
+  const filteredPages = pageSearch
+    ? pages.filter(p => p.toLowerCase().includes(pageSearch.toLowerCase()))
+    : pages;
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.page-search-dropdown')) {
+        setShowPageDropdown(false);
+      }
+    };
+    if (showPageDropdown) {
+      window.addEventListener('mousedown', handler);
+    }
+    return () => window.removeEventListener('mousedown', handler);
+  }, [showPageDropdown]);
+
   const createChart = async (itemId: string, chartType?: string, exportFormat?: string) => {
     setIsCreatingChart(true);
     try {
       const currentChartType = chartType || selectedChartType;
       const currentExportFormat = exportFormat || chartExportFormat;
-      const chartTypeMap = {
-        'bar': 'Grouped Bar',
-        'line': 'Line',
-        'pie': 'Pie',
-        'stacked': 'Stacked Bar'
-      };
+      let chartTypeString = '';
+      if (currentChartType === 'bar') chartTypeString = 'Grouped Bar';
+      else if (currentChartType === 'line') chartTypeString = 'Line';
+      else if (currentChartType === 'pie') chartTypeString = 'Pie';
+      else if (currentChartType === 'stacked') chartTypeString = 'Stacked Bar';
 
       let response;
       if (analysisType === 'image') {
@@ -370,7 +388,7 @@ The excel file analysis reveals specific data patterns and visual elements that 
           space_key: spaceKey,
           page_title: image.pageTitle,
           image_url: image.url,
-          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
+          chart_type: chartTypeString,
           filename: chartFileName || 'chart',
           format: currentExportFormat
         });
@@ -381,12 +399,11 @@ The excel file analysis reveals specific data patterns and visual elements that 
           space_key: spaceKey,
           page_title: excel.pageTitle,
           excel_url: excel.url,
-          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
+          chart_type: chartTypeString,
           filename: chartFileName || 'chart',
           format: currentExportFormat
         });
       }
-      
       const binaryString = atob(response.chart_data);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -394,7 +411,6 @@ The excel file analysis reveals specific data patterns and visual elements that 
       }
       const blob = new Blob([bytes], { type: response.mime_type });
       const chartUrl = URL.createObjectURL(blob);
-      
       setChartData({
         type: currentChartType as any,
         data: { 
@@ -405,7 +421,6 @@ The excel file analysis reveals specific data patterns and visual elements that 
         },
         title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
       });
-      
       setTimeout(() => {
         chartPreviewRef.current?.scrollIntoView({
           behavior: 'smooth',
@@ -743,40 +758,48 @@ ${JSON.stringify(chartData.data, null, 2)}
                   </div>
                 </div>
 
-                {/* Page Selection */}
+                {/* Page Selection - Searchable Dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Pages
                   </label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto border border-white/30 rounded-lg p-2 bg-white/50 backdrop-blur-sm">
-                    {isLoadingPages ? (
-                      <div className="flex items-center justify-center py-4">
-                        <Loader2 className="w-4 h-4 animate-spin text-gray-400 mr-2" />
-                        <span className="text-sm text-gray-500">Loading pages...</span>
-                      </div>
-                    ) : pages.length > 0 ? (
-                      pages.map(page => (
-                        <label key={page} className="flex items-center space-x-2 p-2 hover:bg-white/30 rounded cursor-pointer backdrop-blur-sm">
-                          <input
-                            type="checkbox"
-                            checked={selectedPages.includes(page)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedPages([...selectedPages, page]);
-                              } else {
-                                setSelectedPages(selectedPages.filter(p => p !== page));
-                              }
-                            }}
-                            className="rounded border-gray-300 text-confluence-blue focus:ring-confluence-blue"
-                          />
-                          <span className="text-sm text-gray-700">{page}</span>
-                        </label>
-                      ))
-                    ) : (
-                      <div className="text-center py-4">
-                        <span className="text-sm text-gray-500">
-                          {spaceKey ? 'No pages found' : 'Select a space to load pages'}
-                        </span>
+                  <div className="relative page-search-dropdown">
+                    <input
+                      type="text"
+                      placeholder={isLoadingPages ? 'Loading pages...' : 'Type to search pages...'}
+                      disabled={isLoadingPages || pages.length === 0}
+                      className="w-full p-3 border border-white/30 rounded-lg focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm disabled:bg-gray-100"
+                      value={pageSearch}
+                      onChange={e => setPageSearch(e.target.value)}
+                      onFocus={() => setShowPageDropdown(true)}
+                    />
+                    {showPageDropdown && !isLoadingPages && pages.length > 0 && (
+                      <div className="absolute z-10 w-full bg-white/90 border border-white/30 rounded-lg mt-1 max-h-40 overflow-y-auto shadow-lg">
+                        {filteredPages.length > 0 ? (
+                          filteredPages.map(page => (
+                            <div
+                              key={page}
+                              className={`px-3 py-2 cursor-pointer hover:bg-confluence-blue/10 ${selectedPages.includes(page) ? 'bg-confluence-blue/20' : ''}`}
+                              onClick={() => {
+                                if (selectedPages.includes(page)) {
+                                  setSelectedPages(selectedPages.filter(p => p !== page));
+                                } else {
+                                  setSelectedPages([...selectedPages, page]);
+                                }
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPages.includes(page)}
+                                readOnly
+                                className="mr-2 rounded border-gray-300 text-confluence-blue focus:ring-confluence-blue"
+                              />
+                              <span className="text-sm text-gray-700">{page}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-sm text-gray-500">No pages found</div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1283,4 +1306,4 @@ ${JSON.stringify(chartData.data, null, 2)}
   );
 };
 
-export default ImageInsights; 
+export default ImageInsights;

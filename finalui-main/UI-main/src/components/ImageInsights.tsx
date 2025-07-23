@@ -64,10 +64,6 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
   const [isExportingChart, setIsExportingChart] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const chartPreviewRef = useRef<HTMLDivElement>(null);
-  const [pageSearch, setPageSearch] = useState('');
-  const filteredPages = pageSearch
-    ? pages.filter(page => page.toLowerCase().includes(pageSearch.toLowerCase()))
-    : pages;
 
   // Load spaces on component mount
   useEffect(() => {
@@ -754,20 +750,13 @@ ${JSON.stringify(chartData.data, null, 2)}
                     Select Pages
                   </label>
                   <div className="space-y-2 max-h-40 overflow-y-auto border border-white/30 rounded-lg p-2 bg-white/50 backdrop-blur-sm">
-                    <input
-                      type="text"
-                      placeholder="Search pages..."
-                      className="w-full mb-2 p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
-                      value={pageSearch}
-                      onChange={e => setPageSearch(e.target.value)}
-                    />
                     {isLoadingPages ? (
                       <div className="flex items-center justify-center py-4">
                         <Loader2 className="w-4 h-4 animate-spin text-gray-400 mr-2" />
                         <span className="text-sm text-gray-500">Loading pages...</span>
                       </div>
-                    ) : filteredPages.length > 0 ? (
-                      filteredPages.map(page => (
+                    ) : pages.length > 0 ? (
+                      pages.map(page => (
                         <label key={page} className="flex items-center space-x-2 p-2 hover:bg-white/30 rounded cursor-pointer backdrop-blur-sm">
                           <input
                             type="checkbox"
@@ -1295,4 +1284,4 @@ ${JSON.stringify(chartData.data, null, 2)}
   );
 };
 
-export default ImageInsights;
+export default ImageInsights; 

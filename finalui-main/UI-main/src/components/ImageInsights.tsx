@@ -377,7 +377,7 @@ The excel file analysis reveals specific data patterns and visual elements that 
       let chartTypeString = '';
       if (currentChartType === 'bar') chartTypeString = 'Grouped Bar';
       else if (currentChartType === 'line') chartTypeString = 'Line';
-      else if (currentChartType === 'pie') chartTypeString = 'Pie'; // Fix: use 'Pie' if backend expects this
+      else if (currentChartType === 'pie') chartTypeString = 'Pie';
       else if (currentChartType === 'stacked') chartTypeString = 'Stacked Bar';
 
       let response;
@@ -392,6 +392,23 @@ The excel file analysis reveals specific data patterns and visual elements that 
           filename: chartFileName || 'chart',
           format: currentExportFormat
         });
+        const binaryString = atob(response.chart_data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: response.mime_type });
+        const chartUrl = URL.createObjectURL(blob);
+        setChartData({
+          type: currentChartType as any,
+          data: { 
+            chartUrl, 
+            filename: response.filename, 
+            exportFormat: currentExportFormat,
+            imageId: itemId
+          },
+          title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
+        });
       } else {
         const excel = excelFiles.find(f => f.id === itemId);
         if (!excel || !excel.pageTitle) throw new Error('Excel file not found or missing page title');
@@ -403,31 +420,26 @@ The excel file analysis reveals specific data patterns and visual elements that 
           filename: chartFileName || 'chart',
           format: currentExportFormat
         });
-      }
-      const binaryString = atob(response.chart_data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: response.mime_type });
-      const chartUrl = URL.createObjectURL(blob);
-      setChartData({
-        type: currentChartType as any,
-        data: { 
-          chartUrl, 
-          filename: response.filename, 
-          exportFormat: currentExportFormat,
-          imageId: itemId
-        },
-        title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
-      });
-      // Ensure chart preview is always visible after generation
-      setTimeout(() => {
-        chartPreviewRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
+        const binaryString = atob(response.chart_data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: response.mime_type });
+        const chartUrl = URL.createObjectURL(blob);
+        // Add a unique key for Excel chart to force React to update preview
+        setChartData({
+          type: currentChartType as any,
+          data: { 
+            chartUrl, 
+            filename: response.filename, 
+            exportFormat: currentExportFormat,
+            imageId: itemId,
+            excelChartKey: `${itemId}-${currentChartType}-${Date.now()}`
+          },
+          title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
         });
-      }, 100);
+      }
       setTimeout(() => {
         chartPreviewRef.current?.scrollIntoView({
           behavior: 'smooth',

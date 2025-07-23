@@ -1219,6 +1219,35 @@ def get_actual_api_key_from_identifier(identifier: str) -> str:
     print(f"Falling back to GENAI_API_KEY_1, value: {fallback}")
     return fallback
 
+@app.get("/excel-files/{space_key}/{page_title}")
+async def get_excel_files(space_key: str, page_title: str):
+    """Get all Excel file attachments from a specific Confluence page"""
+    try:
+        confluence = init_confluence()
+        space_key = auto_detect_space(confluence, space_key)
+        # Get page content
+        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
+        page = next((p for p in pages if p["title"].strip().lower() == page_title.strip().lower()), None)
+        if not page:
+            raise HTTPException(status_code=404, detail=f"Page '{page_title}' not found")
+        page_id = page["id"]
+        # Get attachments
+        attachments = confluence.get(f"/rest/api/content/{page_id}/child/attachment?limit=50")
+        excel_files = []
+        for att in attachments.get("results", []):
+            if att["title"].lower().endswith(('.xlsx', '.xls', '.csv')):
+                download_link = att["_links"]["download"]
+                base_url = os.getenv("CONFLUENCE_BASE_URL").rstrip("/")
+                file_url = f"{base_url}{download_link}"
+                excel_files.append({
+                    "id": att["id"],
+                    "name": att["title"],
+                    "url": file_url
+                })
+        return {"excel_files": excel_files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

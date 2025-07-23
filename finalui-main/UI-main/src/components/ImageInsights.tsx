@@ -414,6 +414,19 @@ The excel file analysis reveals specific data patterns and visual elements that 
         });
       }, 100);
     } catch (error) {
+      // If chartType is stacked and error is due to minimal data, show a fallback image or message
+      if ((chartType || selectedChartType) === 'stacked') {
+        setChartData({
+          type: 'stacked',
+          data: {
+            chartUrl: '',
+            filename: '',
+            exportFormat: exportFormat || chartExportFormat,
+            imageId: itemId
+          },
+          title: 'Stacked Bar Chart (Not enough data to render chart)'
+        });
+      }
       console.error('Failed to create chart:', error);
     } finally {
       setIsCreatingChart(false);

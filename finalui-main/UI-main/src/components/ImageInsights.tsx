@@ -574,14 +574,16 @@ ${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
           } else {
             const excel = excelFiles.find(f => f.id === itemId);
             if (excel && excel.pageTitle) {
+              let chartTypeString = '';
+              if (chartData.type === 'bar') chartTypeString = 'Grouped Bar';
+              else if (chartData.type === 'line') chartTypeString = 'Line';
+              else if (chartData.type === 'pie') chartTypeString = 'Pie';
+              else if (chartData.type === 'stacked') chartTypeString = 'Stacked Bar';
               const response = await apiService.createChartFromExcel({
                 space_key: spaceKey,
                 page_title: excel.pageTitle,
                 excel_url: excel.url,
-                chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
-                          chartData.type === 'line' ? 'Line' : 
-                          chartData.type === 'pie' ? 'Pie' : 
-                          chartData.type === 'stacked' ? 'Stacked Bar' : '',
+                chart_type: chartTypeString,
                 filename: chartFileName || 'chart',
                 format: currentExportFormat
               });

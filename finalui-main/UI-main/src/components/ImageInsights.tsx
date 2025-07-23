@@ -4,7 +4,6 @@ import { FeatureType } from '../App';
 import { apiService, ExcelFile } from '../services/api';
 import { getConfluenceSpaceAndPageFromUrl } from '../utils/urlUtils';
 
-
 interface ImageInsightsProps {
   onClose: () => void;
   onFeatureSelect: (feature: FeatureType) => void;

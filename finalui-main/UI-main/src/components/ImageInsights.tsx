@@ -421,6 +421,13 @@ The excel file analysis reveals specific data patterns and visual elements that 
         },
         title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart`
       });
+      // Ensure chart preview is always visible after generation
+      setTimeout(() => {
+        chartPreviewRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+      }, 100);
       setTimeout(() => {
         chartPreviewRef.current?.scrollIntoView({
           behavior: 'smooth',

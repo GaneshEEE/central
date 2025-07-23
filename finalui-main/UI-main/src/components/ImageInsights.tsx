@@ -39,7 +39,7 @@ interface ChartData {
 const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect, autoSpaceKey, isSpaceAutoConnected }) => {
   const [spaceKey, setSpaceKey] = useState<string>('');
   const [selectedPages, setSelectedPages] = useState<string[]>([]);
-  const [images, setImages] = useState<ImageData[]>([]);
+  const [
   const [excelFiles, setExcelFiles] = useState<ExcelData[]>([]);
   const [analysisType, setAnalysisType] = useState<'image' | 'excel'>('image');
   const [isAnalyzing, setIsAnalyzing] = useState<string>('');
@@ -64,6 +64,10 @@ const ImageInsights: React.FC<ImageInsightsProps> = ({ onClose, onFeatureSelect,
   const [isExportingChart, setIsExportingChart] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const chartPreviewRef = useRef<HTMLDivElement>(null);
+  const [pageSearch, setPageSearch] = useState('');
+  const filteredPages = pageSearch
+    ? pages.filter(page => page.toLowerCase().includes(pageSearch.toLowerCase()))
+    : pages;
 
   // Load spaces on component mount
   useEffect(() => {
@@ -414,19 +418,6 @@ The excel file analysis reveals specific data patterns and visual elements that 
         });
       }, 100);
     } catch (error) {
-      // If chartType is stacked and error is due to minimal data, show a fallback image or message
-      if ((chartType || selectedChartType) === 'stacked') {
-        setChartData({
-          type: 'stacked',
-          data: {
-            chartUrl: '',
-            filename: '',
-            exportFormat: exportFormat || chartExportFormat,
-            imageId: itemId
-          },
-          title: 'Stacked Bar Chart (Not enough data to render chart)'
-        });
-      }
       console.error('Failed to create chart:', error);
     } finally {
       setIsCreatingChart(false);
@@ -658,11 +649,6 @@ ${JSON.stringify(chartData.data, null, 2)}
     }
   };
 
-  const [pageSearch, setPageSearch] = useState('');
-  const filteredPages = pages.filter(page =>
-    page.toLowerCase().includes(pageSearch.toLowerCase())
-  );
-
   return (
     <div className="fixed inset-0 bg-white flex items-center justify-center z-40 p-4">
       <div className="bg-white/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden">
@@ -767,14 +753,14 @@ ${JSON.stringify(chartData.data, null, 2)}
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Pages
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Search pages..."
-                    className="w-full mb-2 p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
-                    value={pageSearch || ''}
-                    onChange={e => setPageSearch(e.target.value)}
-                  />
                   <div className="space-y-2 max-h-40 overflow-y-auto border border-white/30 rounded-lg p-2 bg-white/50 backdrop-blur-sm">
+                    <input
+                      type="text"
+                      placeholder="Search pages..."
+                      className="w-full mb-2 p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
+                      value={pageSearch}
+                      onChange={e => setPageSearch(e.target.value)}
+                    />
                     {isLoadingPages ? (
                       <div className="flex items-center justify-center py-4">
                         <Loader2 className="w-4 h-4 animate-spin text-gray-400 mr-2" />

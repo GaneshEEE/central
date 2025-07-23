@@ -4,6 +4,7 @@ import { FeatureType } from '../App';
 import { apiService, ExcelFile } from '../services/api';
 import { getConfluenceSpaceAndPageFromUrl } from '../utils/urlUtils';
 
+
 interface ImageInsightsProps {
   onClose: () => void;
   onFeatureSelect: (feature: FeatureType) => void;
@@ -644,6 +645,11 @@ ${JSON.stringify(chartData.data, null, 2)}
     }
   };
 
+  const [pageSearch, setPageSearch] = useState('');
+  const filteredPages = pages.filter(page =>
+    page.toLowerCase().includes(pageSearch.toLowerCase())
+  );
+
   return (
     <div className="fixed inset-0 bg-white flex items-center justify-center z-40 p-4">
       <div className="bg-white/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden">
@@ -748,14 +754,21 @@ ${JSON.stringify(chartData.data, null, 2)}
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Pages
                   </label>
+                  <input
+                    type="text"
+                    placeholder="Search pages..."
+                    className="w-full mb-2 p-2 border border-white/30 rounded focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
+                    value={pageSearch || ''}
+                    onChange={e => setPageSearch(e.target.value)}
+                  />
                   <div className="space-y-2 max-h-40 overflow-y-auto border border-white/30 rounded-lg p-2 bg-white/50 backdrop-blur-sm">
                     {isLoadingPages ? (
                       <div className="flex items-center justify-center py-4">
                         <Loader2 className="w-4 h-4 animate-spin text-gray-400 mr-2" />
                         <span className="text-sm text-gray-500">Loading pages...</span>
                       </div>
-                    ) : pages.length > 0 ? (
-                      pages.map(page => (
+                    ) : filteredPages.length > 0 ? (
+                      filteredPages.map(page => (
                         <label key={page} className="flex items-center space-x-2 p-2 hover:bg-white/30 rounded cursor-pointer backdrop-blur-sm">
                           <input
                             type="checkbox"
@@ -1283,4 +1296,4 @@ ${JSON.stringify(chartData.data, null, 2)}
   );
 };
 
-export default ImageInsights; 
+export default ImageInsights;

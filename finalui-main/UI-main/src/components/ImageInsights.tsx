@@ -644,93 +644,6 @@ ${JSON.stringify(chartData.data, null, 2)}
     }
   };
 
-  // --- File Upload State ---
-  const [uploadedImage, setUploadedImage] = useState<{ url: string; name: string } | null>(null);
-  const [uploadedExcel, setUploadedExcel] = useState<{ url: string; name: string } | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
-  // --- File Upload Handler ---
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'image' | 'excel') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsUploading(true);
-    try {
-      // Placeholder: Replace with your actual upload logic/API
-      // For demo, use a local URL
-      const url = URL.createObjectURL(file);
-      if (type === 'image') {
-        setUploadedImage({ url, name: file.name });
-      } else {
-        setUploadedExcel({ url, name: file.name });
-      }
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  // --- Chart Creation for Uploaded File ---
-  const createChartFromUpload = async (type: 'image' | 'excel', chartType?: string, exportFormat?: string) => {
-    setIsCreatingChart(true);
-    try {
-      const currentChartType = chartType || selectedChartType;
-      const currentExportFormat = exportFormat || chartExportFormat;
-      const chartTypeMap = {
-        'bar': 'Grouped Bar',
-        'line': 'Line',
-        'pie': 'Pie',
-        'stacked': 'Stacked Bar'
-      };
-      let response;
-      if (type === 'image' && uploadedImage) {
-        // Use uploaded image URL
-        response = await apiService.createChart({
-          space_key: spaceKey,
-          page_title: 'Uploaded Image',
-          image_url: uploadedImage.url,
-          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
-          filename: chartFileName || 'chart',
-          format: currentExportFormat
-        });
-      } else if (type === 'excel' && uploadedExcel) {
-        response = await apiService.createChartFromExcel({
-          space_key: spaceKey,
-          page_title: 'Uploaded Excel',
-          excel_url: uploadedExcel.url,
-          chart_type: chartTypeMap[currentChartType as keyof typeof chartTypeMap],
-          filename: chartFileName || 'chart',
-          format: currentExportFormat
-        });
-      } else {
-        setIsCreatingChart(false);
-        return;
-      }
-      const binaryString = atob(response.chart_data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: response.mime_type });
-      const chartUrl = URL.createObjectURL(blob);
-      setChartData({
-        type: currentChartType as any,
-        data: {
-          chartUrl,
-          filename: response.filename,
-          exportFormat: currentExportFormat,
-          imageId: undefined // Not from DB
-        },
-        title: `Generated ${currentChartType.charAt(0).toUpperCase() + currentChartType.slice(1)} Chart (Uploaded ${type === 'image' ? 'Image' : 'Excel'})`
-      });
-      setTimeout(() => {
-        chartPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-    } catch (error) {
-      console.error('Failed to create chart from upload:', error);
-    } finally {
-      setIsCreatingChart(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-white flex items-center justify-center z-40 p-4">
       <div className="bg-white/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden">
@@ -856,187 +769,149 @@ ${JSON.stringify(chartData.data, null, 2)}
                             }}
                             className="rounded border-gray-300 text-confluence-blue focus:ring-confluence-blue"
                           />
-              {/* --- Chart Builder Section with Upload --- */}
-              <div ref={chartPreviewRef} className="bg-white/60 backdrop-blur-xl rounded-xl p-6 border border-white/20 shadow-lg">
-                <h3 className="font-semibold text-gray-800 mb-4 flex items-center">
-                  <BarChart3 className="w-5 h-5 mr-2" />
-                  Chart Builder
-                </h3>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Chart Controls - Left Side */}
-                  <div className="lg:col-span-1 space-y-4">
-                    <div className="bg-white/70 backdrop-blur-sm rounded-lg p-4 border border-white/20">
-                      <h4 className="font-semibold text-gray-800 mb-3">Chart Settings</h4>
-                      <div className="space-y-4">
-                        {/* --- File Upload Controls --- */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Upload Image for Chart</label>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            disabled={isUploading}
-                            onChange={e => handleFileUpload(e, 'image')}
-                            className="w-full p-2 border border-white/30 rounded bg-white/70 backdrop-blur-sm"
-                          />
-                          {uploadedImage && (
-                            <div className="text-xs text-green-700 mt-1">Selected: {uploadedImage.name}</div>
-                          )}
-                          <button
-                            type="button"
-                            disabled={!uploadedImage || isCreatingChart}
-                            onClick={() => createChartFromUpload('image')}
-                            className="mt-2 w-full bg-green-600/90 text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 border border-white/10"
-                          >
-                            {isCreatingChart ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-                            <span>Build Chart from Image</span>
-                          </button>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">Upload Excel for Chart</label>
-                          <input
-                            type="file"
-                            accept=".xls,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                            disabled={isUploading}
-                            onChange={e => handleFileUpload(e, 'excel')}
-                            className="w-full p-2 border border-white/30 rounded bg-white/70 backdrop-blur-sm"
-                          />
-                          {uploadedExcel && (
-                            <div className="text-xs text-green-700 mt-1">Selected: {uploadedExcel.name}</div>
-                          )}
-                          <button
-                            type="button"
-                            disabled={!uploadedExcel || isCreatingChart}
-                            onClick={() => createChartFromUpload('excel')}
-                            className="mt-2 w-full bg-green-600/90 text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 border border-white/10"
-                          >
-                            {isCreatingChart ? <Loader2 className="w-4 h-4 animate-spin" /> : <BarChart3 className="w-4 h-4" />}
-                            <span>Build Chart from Excel</span>
-                          </button>
-                        </div>
-                        {/* --- Existing Chart Controls --- */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Chart Type
-                          </label>
-                          <div className="relative">
-                            <select
-                              value={selectedChartType}
-                              disabled={isChangingChartType}
-                              onChange={async (e) => {
-                                const newChartType = e.target.value as any;
-                                setSelectedChartType(newChartType);
-                                setIsChangingChartType(true);
-                                try {
-                                  let itemId = chartData?.data?.imageId;
-                                  if (!itemId) {
-                                    const itemWithSummary = analysisType === 'image' ? images.find(img => img.summary) : excelFiles.find(f => f.summary);
-                                    itemId = itemWithSummary?.id;
-                                  }
-                                  if (itemId) {
-                                    await createChart(itemId, newChartType, chartExportFormat);
-                                  }
-                                } finally {
-                                  setIsChangingChartType(false);
-                                }
-                              }}
-                              className="w-full p-3 border border-white/30 rounded-lg focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue appearance-none bg-white/70 backdrop-blur-sm disabled:bg-gray-100"
-                            >
-                              {chartTypes.map(type => (
-                                <option key={type.value} value={type.value}>{type.label}</option>
-                              ))}
-                            </select>
-                            {isChangingChartType ? (
-                              <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
-                            ) : (
-                              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                            )}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Chart File Name
-                          </label>
-                          <input
-                            type="text"
-                            value={chartFileName}
-                            onChange={(e) => setChartFileName(e.target.value)}
-                            placeholder="my-chart"
-                            className="w-full p-3 border border-white/30 rounded-lg focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue bg-white/70 backdrop-blur-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Export Format
-                          </label>
-                          <div className="relative">
-                            <select
-                              value={chartExportFormat}
-                              onChange={(e) => {
-                                setChartExportFormat(e.target.value);
-                                if (chartData && chartData.data.chartUrl) {
-                                  setChartData({
-                                    ...chartData,
-                                    data: {
-                                      ...chartData.data,
-                                      exportFormat: e.target.value
-                                    }
-                                  });
-                                }
-                              }}
-                              className="w-full p-3 border border-white/30 rounded-lg focus:ring-2 focus:ring-confluence-blue focus:border-confluence-blue appearance-none bg-white/70 backdrop-blur-sm"
-                            >
-                              <option value="png">PNG</option>
-                              <option value="jpg">JPG</option>
-                              <option value="svg">SVG</option>
-                              <option value="pdf">PDF</option>
-                              <option value="docx">Word Document</option>
-                              <option value="pptx">PowerPoint</option>
-                            </select>
-                            <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
-                          </div>
-                        </div>
-                        <div className="space-y-2 pt-2">
-                          <button
-                            onClick={exportChart}
-                            disabled={isExportingChart}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-green-600/90 backdrop-blur-sm text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors border border-white/10"
-                          >
-                            {isExportingChart ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Download className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
+                          <span className="text-sm text-gray-700">{page}</span>
+                        </label>
+                      ))
+                    ) : (
+                      <div className="text-center py-4">
+                        <span className="text-sm text-gray-500">
+                          {spaceKey ? 'No pages found' : 'Select a space to load pages'}
+                        </span>
                       </div>
-                    </div>
+                    )}
                   </div>
-                  {/* Chart Preview - Right Side */}
-                  <div className="lg:col-span-2">
-                    <div className="bg-white/70 backdrop-blur-sm rounded-lg p-6 border border-white/20">
-                      <h4 className="font-semibold text-gray-800 mb-4">{chartData ? chartData.title : 'Chart Preview'}</h4>
-                      <div className="w-full h-80 bg-gradient-to-br from-confluence-blue/10 to-confluence-light-blue/10 rounded-lg flex items-center justify-center border border-white/20 overflow-hidden">
-                        {chartData && chartData.data.chartUrl ? (
+                  <p className="text-sm text-gray-500 mt-1">
+                    {selectedPages.length} page(s) selected
+                  </p>
+                </div>
+                {/* Load Insight Button */}
+                <button
+                  onClick={() => {
+                    if (analysisType === 'image') {
+                      loadImages();
+                    } else {
+                      loadExcelFiles();
+                    }
+                  }}
+                  disabled={!spaceKey || selectedPages.length === 0 || isLoadingImages || isLoadingExcelFiles}
+                  className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-3 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
+                >
+                  {(isLoadingImages || isLoadingExcelFiles) ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-5 h-5" />
+                      <span>Load {analysisType === 'image' ? 'Images' : 'Excel Files'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Middle Column - Insight Grid */}
+            <div className="xl:col-span-2 space-y-6">
+              {analysisType === 'image' && (
+                images.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {images.map(image => (
+                      <div key={image.id} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                        <div className="aspect-video bg-gray-200/50 backdrop-blur-sm rounded-lg mb-4 overflow-hidden border border-white/20">
                           <img 
-                            src={chartData.data.chartUrl} 
-                            alt={chartData.title}
-                            className="w-full h-full object-contain"
+                            src={image.url} 
+                            alt={image.name}
+                            className="w-full h-full object-cover"
                           />
-                        ) : (
-                          <div className="text-center">
-                            <BarChart3 className="w-20 h-20 text-confluence-blue mx-auto mb-4" />
-                            <p className="text-gray-600 font-medium text-lg"></p>
-                            <p className="text-gray-500 text-sm mt-2">Live  chart preview</p>
-                            <div className="mt-4 text-xs text-gray-400 max-w-md mx-auto">
-                              Chart updates automatically when you change the type in the controls panel
-                            </div>
+                        </div>
+                        <h4 className="font-semibold text-gray-800 mb-2">{image.name}</h4>
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => analyzeImage(image.id)}
+                            disabled={isAnalyzing === image.id}
+                            className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
+                          >
+                            {isAnalyzing === image.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Analyzing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-4 h-4" />
+                                <span>Summarize</span>
+                              </>
+                            )}
+                          </button>
+                          {image.summary && (
+                            <button
+                              onClick={() => createChart(image.id, selectedChartType, chartExportFormat)}
+                              disabled={isCreatingChart}
+                              className="w-full bg-green-600/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 border border-white/10"
+                            >
+                              {isCreatingChart ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Creating Chart...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <BarChart3 className="w-4 h-4" />
+                                  <span>Create Graph</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                        {image.summary && (
+                          <div className="mt-4 p-3 bg-white/70 backdrop-blur-sm rounded-lg border border-white/20">
+                            <p className="text-sm text-gray-700">{image.summary}</p>
                           </div>
                         )}
                       </div>
-                    </div>
+                    ))}
                   </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <Image className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-600 mb-2">No Images Loaded</h3>
+                    <p className="text-gray-500">Select a space and pages to load embedded images for analysis.</p>
+                  </div>
+                )
+              )}
+              {analysisType === 'excel' && (
+                excelFiles.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {excelFiles.map(file => (
+                      <div key={file.id} className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                        <div className="aspect-video bg-gray-200/50 backdrop-blur-sm rounded-lg mb-4 overflow-hidden border border-white/20 flex items-center justify-center">
+                          <FileSpreadsheet className="w-16 h-16 text-green-600" />
+                        </div>
+                        <h4 className="font-semibold text-gray-800 mb-2">{file.name}</h4>
+                        <div className="space-y-2">
+                          <button
+                            onClick={() => analyzeExcel(file.id)}
+                            disabled={isAnalyzing === file.id}
+                            className="w-full bg-confluence-blue/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-confluence-blue disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
+                          >
+                            {isAnalyzing === file.id ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Analyzing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="w-4 h-4" />
+                                <span>Summarize</span>
+                              </>
+                            )}
+                          </button>
+                          {file.summary && (
+                            <button
+                              onClick={() => createChart(file.id, selectedChartType, chartExportFormat)}
+                              disabled={isCreatingChart}
+                              className="w-full bg-green-600/90 backdrop-blur-sm text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2 border border-white/10"
                             >
                               {isCreatingChart ? (
                                 <>

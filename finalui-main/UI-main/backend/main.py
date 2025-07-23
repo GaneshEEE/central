@@ -16,15 +16,10 @@ from docx import Document
 from dotenv import load_dotenv
 from atlassian import Confluence
 import google.generativeai as genai
-import sys
-sys.path.append(r"c:/Users/Dhaya Arun/Downloads/finalui-main/finalui-main")
-from test import hybrid_rag
 from bs4 import BeautifulSoup
 from io import BytesIO
 import difflib
 import base64
-import ast
-import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -37,8 +32,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173", 
         "http://127.0.0.1:5173",
-        "https://central-1rua.onrender.com",  # Add your Render URL
-        "https://central-frontend-gbvy.onrender.com",  # Add frontend domain
+        "https://finalui-1l50.onrender.com",  # Add your Render URL
+        "https://frontend-gwj0.onrender.com",  # Add frontend domain
         "*"  # For development, you can allow all origins
     ],
     allow_credentials=True,
@@ -100,26 +95,6 @@ class ChartRequest(BaseModel):
     space_key: str
     page_title: str
     image_url: str
-    chart_type: str
-    filename: str
-    format: str
-
-class ExcelRequest(BaseModel):
-    space_key: str
-    page_title: str
-    excel_url: str
-
-class ExcelSummaryRequest(BaseModel):
-    space_key: str
-    page_title: str
-    excel_url: str
-    summary: str
-    question: str
-
-class ChartFromExcelRequest(BaseModel):
-    space_key: str
-    page_title: str
-    excel_url: str
     chart_type: str
     filename: str
     format: str
@@ -236,44 +211,6 @@ def auto_detect_space(confluence, space_key: Optional[str] = None) -> str:
         return spaces[0]["key"]
     raise HTTPException(status_code=400, detail="Multiple spaces found. Please specify a space_key.")
 
-def is_generic_answer(answer: str, context: str) -> bool:
-    """
-    Returns True if the answer is generic and not context-specific.
-    Heuristics:
-    - Answer is short (< 80 chars)
-    - Answer contains generic phrases
-    - Answer does not overlap with context
-    """
-    generic_phrases = [
-        "There are several ways to summarize",
-        "Online tools like",
-        "AI summarizers",
-        "Some platforms",
-        "depending on the tools available",
-        "limitations on document length",
-        "require paid subscriptions",
-        "offer built-in summarization capabilities",
-        "Google Assistant can summarize",
-        "TLDThis.com offer free text summarization",
-        "Atlassian Intelligence",
-        "Other AI summarizers",
-        "If accessed through the Google Chrome browser",
-        "desired level of detail"
-    ]
-    answer_lower = answer.lower()
-    if len(answer) < 80:
-        return True
-    for phrase in generic_phrases:
-        if phrase.lower() in answer_lower:
-            return True
-    # Check for overlap with context (at least 2 unique words in both)
-    context_words = set(context.lower().split())
-    answer_words = set(answer_lower.split())
-    overlap = context_words.intersection(answer_words)
-    if len(overlap) < 2:
-        return True
-    return False
-
 # API Endpoints
 @app.get("/")
 async def root():
@@ -342,55 +279,13 @@ async def ai_powered_search(request: SearchRequest, req: Request):
             f"Instructions: Begin with the answer based on the context above. Then, if applicable, supplement with general knowledge."
         )
         
-        structured_prompt = (
-            f"Answer the following question using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the context, set 'supported_by_context' to false.\n"
-            f"Context:\n{full_context}\n\n"
-            f"Question: {request.query}"
-        )
-        response = ai_model.generate_content(structured_prompt)
-        import json as _json
-        try:
-            result = _json.loads(response.text.strip())
-            ai_response = result.get('answer', '').strip()
-            supported = result.get('supported_by_context', False)
-            if not supported:
-                ai_response = hybrid_rag(request.query)
-        except Exception:
-            ai_response = response.text.strip()
-            supported = None
-            # Try ast.literal_eval for Python-style dict
-            try:
-                result = ast.literal_eval(response.text.strip())
-                if isinstance(result, dict):
-                    ai_response = result.get('answer', '').strip()
-                    supported = result.get('supported_by_context', False)
-                    if not supported:
-                        ai_response = hybrid_rag(request.query)
-            except Exception:
-                # Regex fallback for supported_by_context: false
-                if re.search(r"supported_by_context['\"]?\s*[:=]\s*false", response.text.strip(), re.IGNORECASE):
-                    ai_response = hybrid_rag(request.query)
-                else:
-                    # Heuristic: If the answer is not generic and overlaps with context, accept it
-                    supported = not is_generic_answer(ai_response, full_context)
-                    if not supported:
-                        ai_response = hybrid_rag(request.query)
-            # If ast.literal_eval succeeded and ai_response is still a dict, extract 'answer'
-            if isinstance(ai_response, dict):
-                ai_response = ai_response.get('answer', '').strip()
-            # If ai_response is still a string that looks like a dict, extract 'answer' value with regex
-            elif isinstance(ai_response, str):
-                match = re.search(r"['\"]?answer['\"]?\s*:\s*['\"]([^'\"]+)['\"]", ai_response)
-                if match:
-                    ai_response = match.group(1).strip()
-        page_titles = [p["title"] for p in selected_pages]
-        grounding = f"This answer is based on the following Confluence page(s): {', '.join(page_titles)}."
-        final_response = ai_response
+        response = ai_model.generate_content(prompt)
+        ai_response = response.text.strip()
+        
         return {
-            "response": f"{final_response}\n\n{grounding}",
+            "response": ai_response,
             "pages_analyzed": len(selected_pages),
-            "page_titles": page_titles,
-            "grounding": grounding
+            "page_titles": [p["title"] for p in selected_pages]
         }
         
     except Exception as e:
@@ -499,23 +394,13 @@ async def video_summarizer(request: VideoRequest, req: Request):
         
         # Q&A
         if request.question:
-            structured_prompt = (
-                f"Answer the following question using ONLY the provided transcript. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the transcript, set 'supported_by_context' to false.\n"
-                f"Transcript:\n{transcript_text[:3000]}\n\n"
-                f"Question: {request.question}"
+            qa_prompt = (
+                f"Based on the following video transcript, answer this question: {request.question}\n\n"
+                f"Transcript: {transcript_text[:3000]}\n\n"
+                f"Provide a detailed answer based on the video content."
             )
-            qa_response = ai_model.generate_content(structured_prompt)
-            import json as _json
-            try:
-                result = _json.loads(qa_response.text.strip())
-                answer = result.get('answer', '').strip()
-                supported = result.get('supported_by_context', False)
-            except Exception:
-                answer = qa_response.text.strip()
-                supported = False
-            grounding = f"This answer is based on the transcript of the Confluence page: {request.page_title}."
-            final_answer = answer if supported else hybrid_rag(request.question)
-            return {"answer": f"{final_answer}\n\n{grounding}", "grounding": grounding}
+            qa_response = ai_model.generate_content(qa_prompt)
+            return {"answer": qa_response.text.strip()}
         
         # Generate quotes
         quote_prompt = (
@@ -610,68 +495,42 @@ async def code_assistant(request: CodeRequest, req: Request):
         detected_lang = detect_language_from_content(cleaned_code)
         
         # Generate summary
-        structured_prompt = (
-            f"Summarize the following code/content using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the summary is not possible from the context, set 'supported_by_context' to false.\n"
-            f"Code/Content:\n{context}"
+        summary_prompt = (
+            f"The following is content (possibly code or structure) from a Confluence page:\n\n{context}\n\n"
+            "Summarize in detailed paragraph"
         )
-        summary_response = ai_model.generate_content(structured_prompt)
-        import json as _json
-        try:
-            result = _json.loads(summary_response.text.strip())
-            summary = result.get('answer', '').strip()
-            supported = result.get('supported_by_context', False)
-        except Exception:
-            summary = summary_response.text.strip()
-            supported = False
-        final_summary = summary if supported else hybrid_rag(structured_prompt)
+        summary_response = ai_model.generate_content(summary_prompt)
+        summary = summary_response.text.strip()
         
         # Modify code if instruction provided
         modified_code = None
         if request.instruction:
-            structured_prompt = (
-                f"Modify the following code as per instruction using ONLY the provided code. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the modification is not possible from the code, set 'supported_by_context' to false.\n"
-                f"Code:\n{cleaned_code}\n\n"
-                f"Instruction: {request.instruction}"
+            alteration_prompt = (
+                f"The following is a piece of code extracted from a Confluence page:\n\n{cleaned_code}\n\n"
+                f"Please modify this code according to the following instruction:\n'{request.instruction}'\n\n"
+                "Return the modified code only. No explanation or extra text."
             )
-            altered_response = ai_model.generate_content(structured_prompt)
-            import json as _json
-            try:
-                result = _json.loads(altered_response.text.strip())
-                modified_code = result.get('answer', '').strip()
-                supported_mod = result.get('supported_by_context', False)
-            except Exception:
-                modified_code = altered_response.text.strip()
-                supported_mod = False
-            final_modified_code = modified_code if supported_mod else hybrid_rag(structured_prompt)
+            altered_response = ai_model.generate_content(alteration_prompt)
+            modified_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", altered_response.text.strip(), flags=re.MULTILINE)
         
         # Convert to another language if requested
         converted_code = None
         if request.target_language and request.target_language != detected_lang:
-            input_code = final_modified_code if request.instruction else cleaned_code
-            structured_prompt = (
-                f"Convert the following code to {request.target_language} using ONLY the provided code. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the conversion is not possible from the code, set 'supported_by_context' to false.\n"
-                f"Code:\n{input_code}"
+            input_code = modified_code if modified_code else cleaned_code
+            convert_prompt = (
+                f"The following is a code structure or data snippet:\n\n{input_code}\n\n"
+                f"Convert this into equivalent {request.target_language} code. Only show the converted code."
             )
-            lang_response = ai_model.generate_content(structured_prompt)
-            import json as _json
-            try:
-                result = _json.loads(lang_response.text.strip())
-                converted_code = result.get('answer', '').strip()
-                supported_conv = result.get('supported_by_context', False)
-            except Exception:
-                converted_code = lang_response.text.strip()
-                supported_conv = False
-            final_converted_code = converted_code if supported_conv else hybrid_rag(structured_prompt)
+            lang_response = ai_model.generate_content(convert_prompt)
+            converted_code = re.sub(r"^```[a-zA-Z]*\n|```$", "", lang_response.text.strip(), flags=re.MULTILINE)
         
-        grounding = f"This answer is based on the code/content from the Confluence page: {request.page_title}."
         return {
-            "summary": f"{summary}\n\n{grounding}",
+            "summary": summary,
             "original_code": cleaned_code,
             "detected_language": detected_lang,
-            "modified_code": (f"{modified_code}\n\n{grounding}" if modified_code else None),
-            "converted_code": (f"{converted_code}\n\n{grounding}" if converted_code else None),
-            "target_language": request.target_language,
-            "grounding": grounding
+            "modified_code": modified_code,
+            "converted_code": converted_code,
+            "target_language": request.target_language
         }
         
     except Exception as e:
@@ -809,7 +668,6 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
 
         # Q&A if question provided
         qa_answer = None
-        grounding = f"This answer is based on the diff between Confluence pages: {request.old_page_title} and {request.new_page_title}."
         if request.question:
             context = (
                 f"Summary: {impact_text[:1000]}\n"
@@ -817,35 +675,30 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
                 f"Risks: {risk_text[:1000]}\n"
                 f"Changes: +{lines_added}, -{lines_removed}, ~{percent_change}%"
             )
-            structured_prompt = (
-                f"Answer the following question using ONLY the provided diff and analysis. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the diff/analysis, set 'supported_by_context' to false.\n"
-                f"{context}\n\nDiff:\n{full_diff_text}\n\nQuestion: {request.question}"
-            )
-            qa_response = ai_model.generate_content(structured_prompt)
-            import json as _json
-            try:
-                result = _json.loads(qa_response.text.strip())
-                qa_answer = f"{result.get('answer', '').strip()}\n\n{grounding}"
-                supported = result.get('supported_by_context', False)
-            except Exception:
-                qa_answer = f"{qa_response.text.strip()}\n\n{grounding}"
-                supported = False
-            final_qa_answer = qa_answer if supported else hybrid_rag(request.question)
+            qa_prompt = f"""You are an expert AI assistant. Based on the report below, answer the user's question clearly.
+
+{context}
+
+Question: {request.question}
+
+Answer:"""
+            qa_response = ai_model.generate_content(qa_prompt)
+            qa_answer = qa_response.text.strip()
+            
         
         return {
             "lines_added": lines_added,
             "lines_removed": lines_removed,
             "files_changed": 1,
             "percentage_change": percent_change,
-            "impact_analysis": f"{impact_text}\n\n{grounding}",
-            "recommendations": f"{rec_text}\n\n{grounding}",
-            "risk_analysis": f"{risk_text}\n\n{grounding}",
+            "impact_analysis": impact_text,
+            "recommendations": rec_text,
+            "risk_analysis": risk_text,
             "risk_level": "low" if percent_change < 10 else "medium" if percent_change < 30 else "high",
             "risk_score": min(10, max(1, round(percent_change / 10))),
             "risk_factors": risk_factors,
             "answer": qa_answer,
-            "diff": full_diff_text,
-            "grounding": grounding
+            "diff": full_diff_text
         }
         
     except Exception as e:
@@ -1019,33 +872,21 @@ Respond **exactly** in this format with dynamic insights, no extra text outside 
         
         # Q&A if question provided
         ai_response = None
-        grounding = f"This answer is based on the code/content from the Confluence page: {request.code_page_title}."
         if request.question:
             context = f"📘 Test Strategy:\n{strategy_text}\n🌐 Cross-Platform Testing:\n{cross_text}"
             if sensitivity_text:
                 context += f"\n🔒 Sensitivity Analysis:\n{sensitivity_text}"
-            structured_prompt = (
-                f"Answer the following user query using ONLY the provided context. Return your answer as JSON: {{'answer': <your answer>, 'supported_by_context': true/false}}. If the answer is not in the context, set 'supported_by_context' to false.\n"
-                f"{context}\n\nQuestion: {request.question}"
-            )
-            response_chat = ai_model.generate_content(structured_prompt)
-            import json as _json
-            try:
-                result = _json.loads(response_chat.text.strip())
-                ai_response = f"{result.get('answer', '').strip()}\n\n{grounding}"
-                supported = result.get('supported_by_context', False)
-            except Exception:
-                ai_response = f"{response_chat.text.strip()}\n\n{grounding}"
-                supported = False
-            final_ai_response = ai_response if supported else hybrid_rag(request.question)
+            
+            prompt_chat = f"""Based on the following content:\n{context}\n\nAnswer this user query: "{request.question}" """
+            response_chat = ai_model.generate_content(prompt_chat)
+            ai_response = response_chat.text.strip()
             print(f"Q&A generated: {len(ai_response)} chars")  # Debug log
         
         result = {
-            "test_strategy": f"{strategy_text}\n\n{grounding}",
-            "cross_platform_testing": f"{cross_text}\n\n{grounding}",
-            "sensitivity_analysis": (f"{sensitivity_text}\n\n{grounding}" if sensitivity_text else None),
-            "ai_response": ai_response,
-            "grounding": grounding
+            "test_strategy": strategy_text,
+            "cross_platform_testing": cross_text,
+            "sensitivity_analysis": sensitivity_text,
+            "ai_response": ai_response
         }
         
         print(f"Returning result: {result}")  # Debug log
@@ -1081,36 +922,6 @@ async def get_images(space_key: Optional[str] = None, page_title: str = ""):
         
         return {"images": image_urls}
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/excel-files/{space_key}/{page_title}")
-async def get_excel_files(space_key: Optional[str] = None, page_title: str = ""):
-    """Get all Excel files from a specific page"""
-    try:
-        confluence = init_confluence()
-        space_key = auto_detect_space(confluence, space_key)
-        
-        pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
-        page = next((p for p in pages if p["title"].strip().lower() == page_title.strip().lower()), None)
-        
-        if not page:
-            raise HTTPException(status_code=404, detail=f"Page '{page_title}' not found")
-            
-        page_id = page["id"]
-        attachments = confluence.get_attachments_from_content(page_id=page_id, limit=100)
-        
-        base_url = os.getenv("CONFLUENCE_BASE_URL")
-        excel_files = []
-        for attachment in attachments['results']:
-            if attachment['title'].endswith(('.xlsx', '.xls')):
-                excel_files.append({
-                    "id": attachment['id'],
-                    "name": attachment['title'],
-                    "url": base_url + attachment['_links']['download']
-                })
-                
-        return {"excel_files": excel_files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1152,38 +963,9 @@ async def image_summary(request: ImageRequest, req: Request):
         
         response = ai_model.generate_content([uploaded, prompt])
         summary = response.text.strip()
-        grounding = "Grounding: This answer is based on the provided image content."
-        
-        return {"summary": f"{summary}\n\n{grounding}", "grounding": grounding}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/excel-summary")
-async def excel_summary(request: ExcelRequest, req: Request):
-    """Generate AI summary for an Excel file"""
-    try:
-        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
-        genai.configure(api_key=api_key)
-        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
-        
-        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-        response = requests.get(request.excel_url, auth=auth)
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch Excel file")
-        
-        excel_bytes = response.content
-        df = pd.read_excel(BytesIO(excel_bytes))
-        
-        prompt = (
-            "You are analyzing an Excel file. Provide a concise summary of the data, including key insights and trends.\n\n"
-            f"Data:\n{df.to_string()}"
-        )
-        
-        response = ai_model.generate_content(prompt)
-        summary = response.text.strip()
         
         return {"summary": summary}
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1226,40 +1008,9 @@ async def image_qa(request: ImageSummaryRequest, req: Request):
         
         ai_response = ai_model.generate_content([uploaded_img, full_prompt])
         answer = ai_response.text.strip()
-        grounding = "Grounding: This answer is based on the provided image and summary content."
-        
-        return {"answer": f"{answer}\n\n{grounding}", "grounding": grounding}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/excel-qa")
-async def excel_qa(request: ExcelSummaryRequest, req: Request):
-    """Generate AI response for a question about an excel file"""
-    try:
-        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
-        genai.configure(api_key=api_key)
-        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
-        
-        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-        response = requests.get(request.excel_url, auth=auth)
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch excel file")
-        
-        excel_bytes = response.content
-        df = pd.read_excel(BytesIO(excel_bytes))
-        
-        full_prompt = (
-            "Answer the user's question based on the provided summary and data from an Excel file.\n\n"
-            f"Summary:\n{request.summary}\n\n"
-            f"Data:\n{df.to_string()}\n\n"
-            f"User Question:\n{request.question}"
-        )
-        
-        ai_response = ai_model.generate_content(full_prompt)
-        answer = ai_response.text.strip()
         
         return {"answer": answer}
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1343,7 +1094,11 @@ async def create_chart(request: ChartRequest, req: Request):
         elif request.chart_type == "Stacked Bar":
             df_plot = df.set_index(df.columns[0])
             plt.figure(figsize=(10, 6))
-            df_plot.drop(columns="Total", errors="ignore").plot(kind='bar', stacked=True)
+            # Fix: Only use numeric columns for stacking
+            numeric_cols = df_plot.select_dtypes(include=['number']).columns
+            if len(numeric_cols) == 0:
+                raise HTTPException(status_code=400, detail="No numeric columns available for stacked bar chart")
+            df_plot[numeric_cols].drop(columns="Total", errors="ignore").plot(kind='bar', stacked=True)
             plt.title("Stacked Bar Chart")
             plt.xticks(rotation=45)
             plt.ylabel("Count")
@@ -1382,56 +1137,6 @@ async def create_chart(request: ChartRequest, req: Request):
             "filename": f"{request.filename}.{request.format.lower()}"
         }
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/create-chart-from-excel")
-async def create_chart_from_excel(request: ChartFromExcelRequest, req: Request):
-    """Create chart from excel data"""
-    try:
-        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
-        genai.configure(api_key=api_key)
-        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
-        
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        
-        auth = (os.getenv('CONFLUENCE_USER_EMAIL'), os.getenv('CONFLUENCE_API_KEY'))
-        response = requests.get(request.excel_url, auth=auth)
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Failed to fetch excel file")
-        
-        excel_bytes = response.content
-        df = pd.read_excel(BytesIO(excel_bytes))
-
-        plt.figure(figsize=(10, 6))
-        
-        if request.chart_type == "Grouped Bar":
-            df.plot(kind='bar', ax=plt.gca())
-        elif request.chart_type == "Line":
-            df.plot(kind='line', ax=plt.gca())
-        elif request.chart_type == "Pie":
-            # Assume first column is labels, second column is values
-            labels = df.iloc[:, 0]
-            values = df.iloc[:, 1]
-            plt.pie(values, labels=labels, autopct='%1.1f%%')
-        elif request.chart_type == "Stacked Bar":
-            df.plot(kind='bar', stacked=True, ax=plt.gca())
-
-        plt.title(f"{request.chart_type} Chart")
-        plt.tight_layout()
-        
-        buf = BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        chart_data = base64.b64encode(buf.read()).decode('utf-8')
-        
-        return {
-            "chart_data": chart_data,
-            "mime_type": "image/png",
-            "filename": f"{request.filename}.png"
-        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

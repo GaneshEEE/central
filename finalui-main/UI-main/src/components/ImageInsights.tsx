@@ -551,7 +551,8 @@ ${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                 image_url: image.url,
                 chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
                          chartData.type === 'line' ? 'Line' : 
-                         chartData.type === 'pie' ? 'Pie Chart' : 'Stacked Bar',
+                         chartData.type === 'pie' ? 'Pie Chart' : 
+                         chartData.type === 'stacked' ? 'Stacked Bar' : '',
                 filename: chartFileName || 'chart',
                 format: currentExportFormat
               });
@@ -579,7 +580,8 @@ ${excel.qa?.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                 excel_url: excel.url,
                 chart_type: chartData.type === 'bar' ? 'Grouped Bar' : 
                           chartData.type === 'line' ? 'Line' : 
-                          chartData.type === 'pie' ? 'Pie Chart' : 'Stacked Bar',
+                          chartData.type === 'pie' ? 'Pie Chart' : 
+                          chartData.type === 'stacked' ? 'Stacked Bar' : '',
                 filename: chartFileName || 'chart',
                 format: currentExportFormat
               });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import AIPoweredSearch from './components/AIPoweredSearch';
 import VideoSummarizer from './components/VideoSummarizer';
 import CodeAssistant from './components/CodeAssistant';
@@ -55,7 +55,9 @@ function App() {
   return (
     <div className="min-h-screen bg-white p-4">
       {!isAppOpen && (
-        <CircularLauncher onClick={handleLauncherClick} />
+        <div className="overflow-x-auto whitespace-nowrap py-4">
+          <CircularLauncher onClick={handleLauncherClick} />
+        </div>
       )}
       
       {isAppOpen && (

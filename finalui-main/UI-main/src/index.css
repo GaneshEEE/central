@@ -3,6 +3,7 @@
 @tailwind utilities;
 
 /* Custom scrollbar styles */
+
 .scrollbar-thin {
   scrollbar-width: thin;
 }
@@ -43,4 +44,26 @@
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.feature-toolbar {
+  display: flex;
+  overflow-x: auto;
+  white-space: nowrap;
+  gap: 10px;
+  padding: 10px;
+  background-color: #f5f5f5;
+  scrollbar-width: thin; /* Firefox */
+}
+
+.feature-item {
+  flex: 0 0 auto;
+  padding: 10px 20px;
+  background-color: #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.feature-toolbar {
+  scroll-behavior: smooth;
 }

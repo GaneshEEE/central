@@ -44,3 +44,42 @@
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+.feature-navigator {
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    padding: 10px;
+}
+
+.feature-navigator > * {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 20px;
+}
+
+/* Optional: Custom scrollbar styling */
+.feature-navigator::-webkit-scrollbar {
+    height: 8px;
+}
+
+.feature-navigator::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.feature-navigator::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.feature-navigator::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.feature-navigator {
+    -webkit-overflow-x: auto;
+    -moz-overflow-x: auto;
+    -ms-overflow-x: auto;
+    overflow-x: auto;
+}

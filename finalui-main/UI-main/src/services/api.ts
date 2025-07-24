@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://central-1rua.onrender.com';
+const API_BASE_URL = 'https://central-lwsd.onrender.com';
 
 export interface SearchRequest {
   space_key: string;

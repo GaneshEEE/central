@@ -179,7 +179,7 @@ const CodeAssistant: React.FC<CodeAssistantProps> = ({ onClose, onFeatureSelect,
           </div>
           
           {/* Feature Navigation */}
-          <div className="mt-6 flex gap-2">
+          <div className="mt-6 flex gap-2 overflow-x-auto whitespace-nowrap pb-2">
             {features.map((feature) => {
               const Icon = feature.icon;
               const isActive = feature.id === 'code';

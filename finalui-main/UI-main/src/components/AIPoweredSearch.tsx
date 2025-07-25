@@ -157,31 +157,31 @@ const AIPoweredSearch: React.FC<AIPoweredSearchProps> = ({
             <button onClick={onClose} className="text-white hover:bg-white/10 rounded-full p-2 backdrop-blur-sm">
               <X className="w-6 h-6" />
             </button>
-          </div>
+        </div>
           
-          {/* Feature Navigation */}
-          <div className="mt-6 flex gap-2">
-            {features.map((feature) => {
-              const Icon = feature.icon;
-              const isActive = feature.id === 'search';
-              
-              return (
-                <button
-                  key={feature.id}
-                  onClick={() => onFeatureSelect(feature.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg backdrop-blur-sm border transition-all duration-200 whitespace-nowrap ${
-                    isActive
+        {/* Feature Navigation with Horizontal Scroll */}
+        <div className="mt-6 overflow-x-auto">
+            <div className="flex gap-2 min-w-max pb-2">
+              {features.map((feature) => {
+                const Icon = feature.icon;
+                const isActive = feature.id === 'search';
+                return (
+                  <button
+                    key={feature.id}
+                    onClick={() => onFeatureSelect(feature.id)}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg backdrop-blur-sm border transition-all duration-200 whitespace-nowrap ${
+                     isActive
                       ? 'bg-white/90 text-confluence-blue shadow-lg border-white/30'
                       : 'bg-white/10 text-white hover:bg-white/20 border-white/10'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-sm font-medium">{feature.label}</span>
+                }`}
+               >
+                <Icon className="w-4 h-4" />
+                <span className="text-sm font-medium">{feature.label}</span>
                 </button>
-              );
-            })}
+               );
+              })}
+            </div>
           </div>
-        </div>
 
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           {error && (
@@ -402,7 +402,8 @@ const AIPoweredSearch: React.FC<AIPoweredSearchProps> = ({
           Saved to Confluence! Please refresh this Confluence page to see your changes.
         </div>
       )}
-    </div>
+     </div>
+  </div>   
   );
 };
 

@@ -3,14 +3,12 @@
 @tailwind utilities;
 
 /* Custom scrollbar styles */
-
 .scrollbar-thin {
   scrollbar-width: thin;
 }
 
 .scrollbar-track-white\/10::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
-  overflow-x: auto;
   border-radius: 6px;
 }
 
@@ -47,3 +45,8 @@
   background: transparent;
 }
 
+/* Optional scroll smoothing */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}

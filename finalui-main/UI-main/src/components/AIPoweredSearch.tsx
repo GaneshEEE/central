@@ -29,6 +29,8 @@ const AIPoweredSearch: React.FC<AIPoweredSearchProps> = ({
   const [pages, setPages] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [activeFeature, setActiveFeature] = useState<FeatureType>('search');
+
 
   const toggleSelectAllPages = () => {
     if (selectAllPages) {
@@ -168,7 +170,8 @@ const AIPoweredSearch: React.FC<AIPoweredSearchProps> = ({
                 return (
                   <button
                     key={feature.id}
-                    onClick={() => onFeatureSelect(feature.id)}
+                    onClick={() =>  {onFeatureSelect(feature.id);
+                                    setActiveFeature(feature.id);}}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-lg backdrop-blur-sm border transition-all duration-200 whitespace-nowrap ${
                      isActive
                       ? 'bg-white/90 text-confluence-blue shadow-lg border-white/30'

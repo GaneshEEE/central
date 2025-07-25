@@ -45,8 +45,4 @@
   background: transparent;
 }
 
-/* Optional scroll smoothing */
-.overflow-x-auto {
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
+

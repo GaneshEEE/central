@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, GitCompare, AlertTriangle, CheckCircle, X, ChevronDown, Loader2, Download, Save, MessageSquare, Search, Video, Code, TestTube, Image } from 'lucide-react';
+import { TrendingUp, GitCompare, AlertTriangle, CheckCircle, X, ChevronDown, Loader2, Download, Save, MessageSquare, Search, Video, Code, TestTube, Image, ExternalLink, Shield, Zap } from 'lucide-react';
 import { FeatureType } from '../App';
-import { apiService, Space } from '../services/api';
+import { apiService, Space, StackOverflowRiskRequest, StackOverflowRiskResponse } from '../services/api';
 import { getConfluenceSpaceAndPageFromUrl } from '../utils/urlUtils';
 
 interface ImpactAnalyzerProps {
@@ -41,6 +41,8 @@ const ImpactAnalyzer: React.FC<ImpactAnalyzerProps> = ({ onClose, onFeatureSelec
   const [pages, setPages] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [stackOverflowResults, setStackOverflowResults] = useState<StackOverflowRiskResponse | null>(null);
+  const [isStackOverflowLoading, setIsStackOverflowLoading] = useState(false);
 
   const features = [
     { id: 'search' as const, label: 'AI Powered Search', icon: Search },
@@ -164,6 +166,35 @@ This analysis is based on the diff comparison between the selected versions.`;
     }
   };
 
+  const runStackOverflowRiskCheck = async () => {
+    if (!selectedSpace || !oldPage || !newPage || !diffResults) {
+      setError('Please run impact analysis first to get diff results.');
+      return;
+    }
+    
+    setIsStackOverflowLoading(true);
+    setError('');
+    
+    try {
+      const request: StackOverflowRiskRequest = {
+        space_key: selectedSpace,
+        old_page_title: oldPage,
+        new_page_title: newPage,
+        diff_content: diffResults,
+        code_changes: impactSummary
+      };
+
+      const result = await apiService.stackOverflowRiskChecker(request);
+      setStackOverflowResults(result);
+      
+    } catch (err) {
+      setError('Failed to run Stack Overflow risk check. Please try again.');
+      console.error('Error running Stack Overflow risk check:', err);
+    } finally {
+      setIsStackOverflowLoading(false);
+    }
+  };
+
   const exportAnalysis = async () => {
     const content = `# Impact Analysis Report
 
@@ -185,6 +216,26 @@ This analysis is based on the diff comparison between the selected versions.`;
 ${riskLevel?.factors.map(factor => `  - ${factor}`).join('\n')}
 
 ${impactSummary}
+
+${stackOverflowResults ? `
+## Stack Overflow Risk Analysis
+- **Overall Risk Score**: ${stackOverflowResults.overall_risk_score}/10
+- **Risk Summary**: ${stackOverflowResults.risk_summary}
+
+### Risk Findings
+${stackOverflowResults.risk_findings.map(finding => `
+#### ${finding.type.replace('_', ' ').toUpperCase()} - ${finding.severity.toUpperCase()}
+- **Title**: ${finding.title}
+- **Description**: ${finding.description}
+${finding.stack_overflow_links.length > 0 ? `- **Stack Overflow References**:
+${finding.stack_overflow_links.map(link => `  - ${link}`).join('\n')}` : ''}
+${finding.recommendations.length > 0 ? `- **Recommendations**:
+${finding.recommendations.map(rec => `  - ${rec}`).join('\n')}` : ''}
+`).join('\n')}
+
+### Alternative Approaches
+${stackOverflowResults.alternative_approaches.map(approach => `- ${approach}`).join('\n')}
+` : ''}
 
 ## Code Diff
 \`\`\`diff
@@ -231,6 +282,25 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
     }
   };
 
+  const getStackOverflowRiskColor = (severity: string) => {
+    switch (severity) {
+      case 'low': return 'text-green-700 bg-green-100/80 backdrop-blur-sm border-green-200/50';
+      case 'medium': return 'text-yellow-700 bg-yellow-100/80 backdrop-blur-sm border-yellow-200/50';
+      case 'high': return 'text-red-700 bg-red-100/80 backdrop-blur-sm border-red-200/50';
+      default: return 'text-gray-700 bg-gray-100/80 backdrop-blur-sm border-gray-200/50';
+    }
+  };
+
+  const getStackOverflowRiskIcon = (type: string) => {
+    switch (type) {
+      case 'deprecation': return <AlertTriangle className="w-4 h-4" />;
+      case 'warning': return <AlertTriangle className="w-4 h-4" />;
+      case 'best_practice': return <CheckCircle className="w-4 h-4" />;
+      case 'security': return <Shield className="w-4 h-4" />;
+      default: return <AlertTriangle className="w-4 h-4" />;
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-white flex items-center justify-center z-40 p-4">
       <div className="bg-white/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl w-full max-w-7xl max-h-[90vh] overflow-hidden">
@@ -250,7 +320,7 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
           </div>
           
           {/* Feature Navigation */}
-          <div className="mt-6 flex gap-2 overflow-x-auto whitespace-nowrap pb-2">
+          <div className="mt-6 flex gap-2 overflow-x-auto whitespace-nowrap pb-2 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent hover:scrollbar-thumb-white/30">
             {features.map((feature) => {
               const Icon = feature.icon;
               const isActive = feature.id === 'impact';
@@ -259,7 +329,7 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                 <button
                   key={feature.id}
                   onClick={() => onFeatureSelect(feature.id)}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg backdrop-blur-sm border transition-all duration-200 whitespace-nowrap ${
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg backdrop-blur-sm border transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
                     isActive
                       ? 'bg-white/90 text-confluence-blue shadow-lg border-white/30'
                       : 'bg-white/10 text-white hover:bg-white/20 border-white/10'
@@ -364,6 +434,27 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                   )}
                 </button>
 
+                {/* Stack Overflow Risk Checker Button */}
+                {diffResults && (
+                  <button
+                    onClick={runStackOverflowRiskCheck}
+                    disabled={isStackOverflowLoading}
+                    className="w-full bg-orange-600/90 backdrop-blur-sm text-white py-3 px-4 rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors border border-white/10"
+                  >
+                    {isStackOverflowLoading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Checking Stack Overflow...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-5 h-5" />
+                        <span>Stack Overflow Risk Check</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
                 {/* Metrics Display */}
                 {metrics && (
                   <div className="mt-6 space-y-3">
@@ -397,7 +488,7 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                       {getRiskIcon(riskLevel.level)}
                       <div>
                         <div className="font-semibold capitalize">{riskLevel.level} Risk</div>
-                        <div className="text-sm">Score: {riskLevel.score}/10</div>
+                        <div className="text-sm">Score: {riskLevel?.score}/10</div>
                       </div>
                     </div>
                   </div>
@@ -456,6 +547,114 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                       return <br key={index} />;
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Stack Overflow Risk Checker Results */}
+              {stackOverflowResults && (
+                <div className="bg-white/60 backdrop-blur-xl rounded-xl p-4 border border-white/20 shadow-lg">
+                  <h3 className="font-semibold text-gray-800 mb-4 flex items-center">
+                    <ExternalLink className="w-5 h-5 mr-2" />
+                    Stack Overflow Risk Analysis
+                  </h3>
+                  
+                  {/* Overall Risk Score */}
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">Overall Risk Score:</span>
+                      <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                        stackOverflowResults.overall_risk_score <= 3 ? 'bg-green-100 text-green-800' :
+                        stackOverflowResults.overall_risk_score <= 7 ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {stackOverflowResults.overall_risk_score}/10
+                      </span>
+                    </div>
+                    <div className="bg-white/70 backdrop-blur-sm rounded-lg p-3 border border-white/20">
+                      <p className="text-gray-700 text-sm">{stackOverflowResults.risk_summary}</p>
+                    </div>
+                  </div>
+
+                  {/* Risk Findings */}
+                  {stackOverflowResults.risk_findings.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="font-semibold text-gray-800 mb-3">Risk Findings</h4>
+                      <div className="space-y-3">
+                        {stackOverflowResults.risk_findings.map((finding, index) => (
+                          <div key={index} className={`p-3 rounded-lg border ${getStackOverflowRiskColor(finding.severity)}`}>
+                            <div className="flex items-start space-x-2 mb-2">
+                              {getStackOverflowRiskIcon(finding.type)}
+                              <div className="flex-1">
+                                <h5 className="font-semibold text-sm capitalize">{finding.type.replace('_', ' ')}</h5>
+                                <p className="text-sm font-medium">{finding.title}</p>
+                              </div>
+                              <span className={`px-2 py-1 rounded text-xs font-semibold capitalize ${
+                                finding.severity === 'low' ? 'bg-green-200 text-green-800' :
+                                finding.severity === 'medium' ? 'bg-yellow-200 text-yellow-800' :
+                                'bg-red-200 text-red-800'
+                              }`}>
+                                {finding.severity}
+                              </span>
+                            </div>
+                            <p className="text-sm mb-3">{finding.description}</p>
+                            
+                            {/* Stack Overflow Links */}
+                            {finding.stack_overflow_links.length > 0 && (
+                              <div className="mb-3">
+                                <p className="text-xs font-medium text-gray-600 mb-1">Stack Overflow References:</p>
+                                <div className="space-y-1">
+                                  {finding.stack_overflow_links.map((link, linkIndex) => (
+                                    <a
+                                      key={linkIndex}
+                                      href={link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="flex items-center space-x-1 text-xs text-blue-600 hover:text-blue-800"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>View on Stack Overflow</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Recommendations */}
+                            {finding.recommendations.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-gray-600 mb-1">Recommendations:</p>
+                                <ul className="space-y-1">
+                                  {finding.recommendations.map((rec, recIndex) => (
+                                    <li key={recIndex} className="text-xs text-gray-700 flex items-start space-x-1">
+                                      <span className="text-blue-500 mt-0.5">•</span>
+                                      <span>{rec}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Alternative Approaches */}
+                  {stackOverflowResults.alternative_approaches.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-gray-800 mb-3">Alternative Approaches</h4>
+                      <div className="bg-blue-50/80 backdrop-blur-sm rounded-lg p-3 border border-blue-200/50">
+                        <ul className="space-y-2">
+                          {stackOverflowResults.alternative_approaches.map((approach, index) => (
+                            <li key={index} className="text-sm text-gray-700 flex items-start space-x-2">
+                              <Zap className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                              <span>{approach}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

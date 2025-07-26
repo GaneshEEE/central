@@ -1,154 +1,126 @@
 # Confluence AI Assistant
 
-A modern React-based web application that integrates with Confluence and provides AI-powered tools for content analysis, code assistance, impact analysis, and more.
+A comprehensive AI-powered tool suite for Confluence workspaces, featuring advanced analysis, code assistance, and risk assessment capabilities.
 
 ## Features
 
-- **AI Powered Search**: Search and analyze Confluence pages using AI
-- **Code Assistant**: Modify and convert code from Confluence pages
-- **Impact Analyzer**: Analyze code changes and their impact
-- **Test Support Tool**: Generate test strategies and analyze test data
-- **Video Summarizer**: Summarize video content (coming soon)
+### 🎯 AI Powered Search
+- Semantic search across multiple Confluence pages
+- Intelligent content analysis and summarization
+- Context-aware responses
 
-## Prerequisites
+### 🎥 Video Summarizer
+- Extract key insights from video content
+- Generate timestamps and quotes
+- Interactive Q&A about video content
 
-- Node.js (v16 or higher)
-- Python (v3.8 or higher)
-- Confluence instance with API access
-- Gemini API key
+### 💻 Code Assistant
+- Multi-language code analysis and conversion
+- Intelligent code suggestions and improvements
+- Support for JavaScript, TypeScript, Python, Java, C#, Go, Rust, PHP
 
-## Environment Variables
+### 📊 Impact Analyzer
+- **Version comparison and diff analysis**
+- **Risk assessment and impact evaluation**
+- **Stack Overflow Risk Checker** - NEW!
+  - Scans code changes for deprecated patterns
+  - Queries Stack Overflow for warnings and best practices
+  - Identifies security vulnerabilities and alternative approaches
+  - Provides actionable recommendations with SO references
 
-Create a `.env` file in the `backend` directory with the following variables:
+### 🧪 Test Support Tool
+- Comprehensive test strategy generation
+- Cross-platform testing recommendations
+- Sensitivity analysis for test scenarios
 
-```env
-CONFLUENCE_BASE_URL=https://your-domain.atlassian.net
-CONFLUENCE_USER_EMAIL=your-email@domain.com
-CONFLUENCE_API_KEY=your-confluence-api-key
-GENAI_API_KEY_1=your-gemini-api-key
-GENAI_API_KEY_2=your-backup-gemini-api-key
-ASSEMBLYAI_API_KEY=your-assemblyai-api-key
-```
+### 🖼️ Image Insights & Chart Builder
+- AI-powered image analysis and Q&A
+- Excel data processing and visualization
+- Dynamic chart generation (bar, line, pie, stacked)
+
+## Stack Overflow Risk Checker
+
+The **Stack Overflow Risk Checker** is a powerful new feature that helps developers identify potential issues in their code changes by simulating Stack Overflow research.
+
+### How it works:
+1. **Code Analysis**: Analyzes diff content between two versions
+2. **Risk Detection**: Identifies deprecated methods, security issues, and best practice violations
+3. **SO Simulation**: Simulates Stack Overflow queries to find relevant warnings
+4. **Recommendations**: Provides actionable advice with alternative approaches
+
+### Features:
+- **Risk Scoring**: Overall risk assessment (1-10 scale)
+- **Categorized Findings**: Deprecation, warnings, best practices, security issues
+- **Stack Overflow Links**: Simulated relevant SO references
+- **Alternative Approaches**: Suggests better implementation methods
+- **Export Support**: Include risk analysis in exported reports
 
 ## Installation
 
-1. **Install Frontend Dependencies**:
-   ```bash
-   npm install
-   ```
-
-2. **Install Backend Dependencies**:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   cd ..
-   ```
-
-## Running the Application
-
-### Option 1: Run Both Frontend and Backend Together
+### Frontend Setup
 ```bash
-npm run dev:full
-```
-
-### Option 2: Run Separately
-
-**Frontend (React)**:
-```bash
+cd UI-main
+npm install
 npm run dev
 ```
 
-**Backend (FastAPI)**:
+### Backend Setup
 ```bash
-npm run backend
+cd UI-main/backend
+pip install -r requirements.txt
+python main.py
 ```
 
-The application will be available at:
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000
+### Full Stack Development
+```bash
+cd UI-main
+npm run dev:full
+```
+
+## Environment Variables
+
+Create a `.env` file in the backend directory:
+```
+GENAI_API_KEY_1=your_gemini_api_key_1
+GENAI_API_KEY_2=your_gemini_api_key_2
+CONFLUENCE_URL=your_confluence_url
+CONFLUENCE_USERNAME=your_username
+CONFLUENCE_API_TOKEN=your_api_token
+```
 
 ## Usage
 
-1. **Start the application** using one of the methods above
-2. **Enter your Gemini API key** in the application
-3. **Select a Confluence space** from the dropdown
-4. **Choose pages** to analyze or work with
-5. **Use the AI features** to:
-   - Search and analyze content
-   - Modify and convert code
-   - Analyze code changes
-   - Generate test strategies
+1. **Launch the application** and select your Confluence space
+2. **Choose a feature** from the navigation bar
+3. **Configure settings** specific to each tool
+4. **Run analysis** and review results
+5. **Export or save** results to Confluence
 
 ## API Endpoints
 
-The backend provides the following API endpoints:
-
-- `GET /spaces` - Get all Confluence spaces
-- `GET /pages/{space_key}` - Get pages from a specific space
-- `POST /search` - AI-powered search functionality
-- `POST /code-assistant` - Code modification and conversion
-- `POST /impact-analyzer` - Code change impact analysis
+### Core Endpoints
+- `POST /search` - AI-powered search
+- `POST /video-summarizer` - Video analysis
+- `POST /code-assistant` - Code assistance
+- `POST /impact-analyzer` - Impact analysis
+- `POST /stack-overflow-risk-checker` - **NEW!** Risk assessment
 - `POST /test-support` - Test strategy generation
+- `POST /image-summary` - Image analysis
+- `POST /excel-summary` - Excel processing
+- `POST /create-chart` - Chart generation
+
+### Utility Endpoints
+- `GET /spaces` - List Confluence spaces
+- `GET /pages/{space_key}` - List pages in space
 - `POST /export` - Export content in various formats
+- `POST /save-to-confluence` - Save results to Confluence
 
-## Project Structure
+## Technologies Used
 
-```
-UI-main/
-├── src/
-│   ├── components/          # React components
-│   │   ├── AIPoweredSearch.tsx
-│   │   ├── CodeAssistant.tsx
-│   │   ├── ImpactAnalyzer.tsx
-│   │   ├── TestSupportTool.tsx
-│   │   └── VideoSummarizer.tsx
-│   ├── services/
-│   │   └── api.ts          # API service layer
-│   ├── App.tsx             # Main application component
-│   └── main.tsx            # Application entry point
-├── backend/
-│   ├── main.py             # FastAPI backend server
-│   └── requirements.txt    # Python dependencies
-├── package.json            # Node.js dependencies and scripts
-└── README.md              # This file
-```
-
-## Development
-
-### Frontend Development
-- Built with React 18, TypeScript, and Vite
-- Uses Tailwind CSS for styling
-- Lucide React for icons
-
-### Backend Development
-- Built with FastAPI
-- Integrates with Confluence API
-- Uses Google Gemini AI for content processing
-- Supports multiple export formats (PDF, DOCX, CSV, etc.)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **CORS Errors**: Make sure the backend is running on port 8000 and the frontend is configured to connect to it.
-
-2. **API Key Issues**: Verify your Gemini API key is valid and has sufficient quota.
-
-3. **Confluence Connection**: Ensure your Confluence credentials are correct and the instance is accessible.
-
-4. **Python Dependencies**: If you encounter Python import errors, make sure all dependencies are installed:
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   ```
-
-### Getting Help
-
-If you encounter issues:
-1. Check the browser console for frontend errors
-2. Check the terminal running the backend for Python errors
-3. Verify all environment variables are set correctly
-4. Ensure both frontend and backend are running
+- **Frontend**: React, TypeScript, Tailwind CSS, Vite
+- **Backend**: FastAPI, Python, Gemini AI
+- **APIs**: Confluence API, Stack Overflow API (simulated)
+- **Styling**: Tailwind CSS with custom scrollbar support
 
 ## Contributing
 

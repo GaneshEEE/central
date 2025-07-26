@@ -134,6 +134,13 @@ class SaveToConfluenceRequest(BaseModel):
     page_title: str
     content: str
 
+class StackOverflowRiskRequest(BaseModel):
+    space_key: str
+    old_page_title: str
+    new_page_title: str
+    diff_content: Optional[str] = None
+    code_changes: Optional[str] = None
+
 # Helper functions
 def remove_emojis(text):
     emoji_pattern = re.compile(
@@ -847,6 +854,168 @@ async def impact_analyzer(request: ImpactRequest, req: Request):
             "diff": full_diff_text,
             "grounding": grounding
         }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/stack-overflow-risk-checker")
+async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Request):
+    """Stack Overflow Risk Checker functionality"""
+    try:
+        api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
+        genai.configure(api_key=api_key)
+        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+        
+        # Use provided diff content or generate it from pages
+        diff_content = request.diff_content
+        code_changes = request.code_changes
+        
+        if not diff_content:
+            # If no diff content provided, we need to generate it
+            confluence = init_confluence()
+            space_key = auto_detect_space(confluence, getattr(request, 'space_key', None))
+            
+            # Get pages
+            pages = confluence.get_all_pages_from_space(space=space_key, start=0, limit=100)
+            old_page = next((p for p in pages if p["title"] == request.old_page_title), None)
+            new_page = next((p for p in pages if p["title"] == request.new_page_title), None)
+            
+            if not old_page or not new_page:
+                raise HTTPException(status_code=400, detail="One or both pages not found")
+            
+            # Extract content from pages
+            def extract_content(content):
+                soup = BeautifulSoup(content, 'html.parser')
+                # Try to find code blocks first
+                code_blocks = soup.find_all('ac:structured-macro', {'ac:name': 'code'})
+                if code_blocks:
+                    return '\n'.join(
+                        block.find('ac:plain-text-body').text
+                        for block in code_blocks if block.find('ac:plain-text-body')
+                    )
+                # If no code blocks, extract all text content
+                return soup.get_text(separator="\n").strip()
+            
+            old_raw = confluence.get_page_by_id(old_page["id"], expand="body.storage")["body"]["storage"]["value"]
+            new_raw = confluence.get_page_by_id(new_page["id"], expand="body.storage")["body"]["storage"]["value"]
+            old_content = extract_content(old_raw)
+            new_content = extract_content(new_raw)
+            
+            if not old_content or not new_content:
+                raise HTTPException(status_code=400, detail="No content found in one or both pages")
+            
+            # Generate diff
+            old_lines = old_content.splitlines()
+            new_lines = new_content.splitlines()
+            diff = difflib.unified_diff(old_lines, new_lines, fromfile=request.old_page_title, tofile=request.new_page_title, lineterm='')
+            diff_content = '\n'.join(diff)
+        
+        # Clean and truncate the diff content
+        def clean_and_truncate_prompt(text, max_chars=8000):
+            text = re.sub(r'<[^>]+>', '', text)
+            text = re.sub(r'[^\x00-\x7F]+', '', text)
+            return text[:max_chars]
+        
+        safe_diff = clean_and_truncate_prompt(diff_content)
+        
+        # Stack Overflow Risk Analysis Prompt
+        risk_analysis_prompt = f"""
+        Analyze the following code/content changes and identify potential risks, deprecations, and best practices by simulating Stack Overflow research.
+
+        For each identified issue, provide:
+        1. Type: deprecation, warning, best_practice, or security
+        2. Severity: low, medium, or high
+        3. Title: Brief description of the issue
+        4. Description: Detailed explanation
+        5. Stack Overflow Links: Simulated relevant SO links (format: https://stackoverflow.com/questions/...)
+        6. Recommendations: Specific actionable advice
+
+        Also provide:
+        - Overall risk score (1-10)
+        - Risk summary (2-3 sentences)
+        - Alternative approaches (3-5 suggestions)
+
+        Return the analysis as JSON with this structure:
+        {{
+            "risk_findings": [
+                {{
+                    "type": "deprecation|warning|best_practice|security",
+                    "severity": "low|medium|high",
+                    "title": "Issue title",
+                    "description": "Detailed description",
+                    "stack_overflow_links": ["https://stackoverflow.com/questions/..."],
+                    "recommendations": ["Recommendation 1", "Recommendation 2"]
+                }}
+            ],
+            "overall_risk_score": 5,
+            "risk_summary": "Overall risk assessment",
+            "alternative_approaches": ["Alternative 1", "Alternative 2"]
+        }}
+
+        Code Changes:
+        {safe_diff}
+
+        Additional Context:
+        {code_changes or 'No additional context provided'}
+        """
+        
+        risk_response = ai_model.generate_content(risk_analysis_prompt)
+        
+        try:
+            import json
+            risk_data = json.loads(risk_response.text.strip())
+            
+            # Validate and clean the response
+            if not isinstance(risk_data, dict):
+                raise ValueError("Invalid response format")
+            
+            # Ensure all required fields are present
+            risk_data.setdefault("risk_findings", [])
+            risk_data.setdefault("overall_risk_score", 5)
+            risk_data.setdefault("risk_summary", "Risk analysis completed")
+            risk_data.setdefault("alternative_approaches", [])
+            
+            # Validate risk findings
+            for finding in risk_data["risk_findings"]:
+                finding.setdefault("type", "warning")
+                finding.setdefault("severity", "medium")
+                finding.setdefault("title", "Unknown issue")
+                finding.setdefault("description", "No description provided")
+                finding.setdefault("stack_overflow_links", [])
+                finding.setdefault("recommendations", [])
+            
+            return risk_data
+            
+        except json.JSONDecodeError:
+            # Fallback: parse the response manually
+            response_text = risk_response.text.strip()
+            
+            # Extract risk score
+            risk_score_match = re.search(r'risk_score["\s]*:?\s*(\d+)', response_text, re.IGNORECASE)
+            overall_risk_score = int(risk_score_match.group(1)) if risk_score_match else 5
+            
+            # Extract risk summary
+            summary_match = re.search(r'risk_summary["\s]*:?\s*["\']([^"\']+)["\']', response_text, re.IGNORECASE)
+            risk_summary = summary_match.group(1) if summary_match else "Risk analysis completed based on code changes."
+            
+            # Generate fallback findings
+            fallback_findings = [
+                {
+                    "type": "warning",
+                    "severity": "medium",
+                    "title": "Code Changes Detected",
+                    "description": "Changes have been detected in the code. Please review for potential issues.",
+                    "stack_overflow_links": ["https://stackoverflow.com/questions/tagged/code-review"],
+                    "recommendations": ["Review the changes thoroughly", "Test the modified functionality", "Check for breaking changes"]
+                }
+            ]
+            
+            return {
+                "risk_findings": fallback_findings,
+                "overall_risk_score": overall_risk_score,
+                "risk_summary": risk_summary,
+                "alternative_approaches": ["Consider code review", "Add unit tests", "Document changes"]
+            }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

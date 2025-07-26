@@ -174,6 +174,28 @@ export interface SaveToConfluenceResponse {
   message?: string;
 }
 
+export interface StackOverflowRiskRequest {
+  space_key: string;
+  old_page_title: string;
+  new_page_title: string;
+  diff_content?: string;
+  code_changes?: string;
+}
+
+export interface StackOverflowRiskResponse {
+  risk_findings: Array<{
+    type: 'deprecation' | 'warning' | 'best_practice' | 'security';
+    severity: 'low' | 'medium' | 'high';
+    title: string;
+    description: string;
+    stack_overflow_links: string[];
+    recommendations: string[];
+  }>;
+  overall_risk_score: number;
+  risk_summary: string;
+  alternative_approaches: string[];
+}
+
 class ApiService {
   private getSelectedApiKey(): string | undefined {
     if (typeof window !== 'undefined' && localStorage.getItem('selectedApiKeyId')) {
@@ -330,6 +352,13 @@ class ApiService {
 
   async saveToConfluence(request: SaveToConfluenceRequest): Promise<SaveToConfluenceResponse> {
     return this.makeRequest<SaveToConfluenceResponse>('/save-to-confluence', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async stackOverflowRiskChecker(request: StackOverflowRiskRequest): Promise<StackOverflowRiskResponse> {
+    return this.makeRequest<StackOverflowRiskResponse>('/stack-overflow-risk-checker', {
       method: 'POST',
       body: JSON.stringify(request),
     });

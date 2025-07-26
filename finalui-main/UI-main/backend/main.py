@@ -1005,8 +1005,8 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
                     "severity": "medium",
                     "title": "Code Changes Detected",
                     "description": "Changes have been detected in the code. Please review for potential issues.",
-                    "stack_overflow_links": ["https://stackoverflow.com/questions/tagged/code-review"],
-                    "recommendations": ["Review the changes thoroughly", "Test the modified functionality", "Check for breaking changes"]
+                    "stack_overflow_links": [],
+                    "recommendations": []
                 }
             ]
             
@@ -1014,7 +1014,7 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
                 "risk_findings": fallback_findings,
                 "overall_risk_score": overall_risk_score,
                 "risk_summary": risk_summary,
-                "alternative_approaches": ["Consider code review", "Add unit tests", "Document changes"]
+                "alternative_approaches": []
             }
         
     except Exception as e:

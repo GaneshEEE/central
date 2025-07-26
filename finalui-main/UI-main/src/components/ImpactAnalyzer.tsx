@@ -576,7 +576,7 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                   </div>
 
                   {/* Risk Findings */}
-                  {stackOverflowResults.risk_findings.length > 0 && (
+                  {stackOverflowResults.risk_findings.length > 0 ? (
                     <div className="mb-6">
                       <h4 className="font-semibold text-gray-800 mb-3">Risk Findings</h4>
                       <div className="space-y-3">
@@ -599,7 +599,7 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                             <p className="text-sm mb-3">{finding.description}</p>
                             
                             {/* Stack Overflow Links */}
-                            {finding.stack_overflow_links.length > 0 && (
+                            {finding.stack_overflow_links && finding.stack_overflow_links.length > 0 ? (
                               <div className="mb-3">
                                 <p className="text-xs font-medium text-gray-600 mb-1">Stack Overflow References:</p>
                                 <div className="space-y-1">
@@ -617,10 +617,9 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                                   ))}
                                 </div>
                               </div>
-                            )}
-                            
+                            ) : null}
                             {/* Recommendations */}
-                            {finding.recommendations.length > 0 && (
+                            {finding.recommendations && finding.recommendations.length > 0 && (
                               <div>
                                 <p className="text-xs font-medium text-gray-600 mb-1">Recommendations:</p>
                                 <ul className="space-y-1">
@@ -637,10 +636,12 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                         ))}
                       </div>
                     </div>
+                  ) : (
+                    <div className="mb-6 text-gray-500 text-sm italic">No risk findings detected for these changes.</div>
                   )}
 
                   {/* Alternative Approaches */}
-                  {stackOverflowResults.alternative_approaches.length > 0 && (
+                  {stackOverflowResults.alternative_approaches && stackOverflowResults.alternative_approaches.length > 0 ? (
                     <div>
                       <h4 className="font-semibold text-gray-800 mb-3">Alternative Approaches</h4>
                       <div className="bg-blue-50/80 backdrop-blur-sm rounded-lg p-3 border border-blue-200/50">
@@ -654,6 +655,8 @@ ${qaResults.map(qa => `**Q:** ${qa.question}\n**A:** ${qa.answer}`).join('\n\n')
                         </ul>
                       </div>
                     </div>
+                  ) : (
+                    <div className="text-gray-500 text-sm italic mt-2">No alternative approaches found for these changes.</div>
                   )}
                 </div>
               )}

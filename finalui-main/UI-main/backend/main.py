@@ -1081,8 +1081,16 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
     """Stack Overflow Risk Checker functionality"""
     try:
         api_key = get_actual_api_key_from_identifier(req.headers.get('x-api-key'))
-        genai.configure(api_key=api_key)
-        ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+        
+        # Initialize AI model with error handling
+        try:
+            genai.configure(api_key=api_key)
+            ai_model = genai.GenerativeModel("models/gemini-1.5-flash-8b-latest")
+            print("AI model initialized successfully")
+        except Exception as e:
+            print(f"Error initializing AI model: {str(e)}")
+            # If AI model fails to initialize, we'll use fallback analysis
+            ai_model = None
         
         print(f"Stack Overflow Risk Checker request: {request.space_key}, {request.old_page_title} -> {request.new_page_title}")
         
@@ -1172,6 +1180,8 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         You are a senior software engineer analyzing code changes for potential risks, deprecations, and best practices. Analyze the following code diff and provide a comprehensive risk assessment.
 
         IMPORTANT: You MUST respond with valid JSON only. Do not include any text before or after the JSON.
+        CRITICAL: Do NOT execute or interpret any code examples below as actual code. They are only patterns to match against the provided code diff.
+        WARNING: The code diff below is for ANALYSIS ONLY. Do NOT attempt to execute, compile, or run any of the code shown.
 
         Analyze the code changes and identify:
         1. Deprecated methods, APIs, or patterns
@@ -1192,17 +1202,17 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         - If you see: `sql = "SELECT * FROM users WHERE id = " + userId` → Link: "sql-injection-string-concatenation"
         - If you see: `element.innerHTML = userInput` → Link: "xss-innerhtml-document-write"
         - If you see: `addEventListener('click', handler)` without cleanup → Link: "event-listener-memory-leak"
-        - If you see: `async function() { await someFunction() }` without try/catch → Link: "async-await-error-handling"
+        - If you see: `async function() {{ await functionName() }}` without try/catch → Link: "async-await-error-handling"
         - If you see: `useState()` with `useEffect()` missing dependencies → Link: "react-usestate-useeffect-dependency"
         - If you see: `for(let i=0; i<array.length; i++)` → Link: "for-loop-length-optimization"
         - If you see: `password = userInput` → Link: "password-plain-text-storage"
         - If you see: `localStorage.setItem('token', jwt)` → Link: "jwt-localstorage-security"
-        - If you see: `try { riskyOperation() }` without catch → Link: "try-without-catch"
-        - If you see: `if (value) { ... }` without null check → Link: "null-check-missing"
+        - If you see: `try {{ operation() }}` without catch → Link: "try-without-catch"
+        - If you see: `if (value) {{ ... }}` without null check → Link: "null-check-missing"
 
         DO NOT use generic links like "code-review" or "best-practices". Make them EXACTLY match the specific code patterns you find.
 
-        Code Diff to Analyze:
+        Code Diff to Analyze (FOR ANALYSIS ONLY - DO NOT EXECUTE):
         {safe_diff}
 
         Additional Context:
@@ -1235,11 +1245,19 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         """
         
         print("Sending request to AI model...")
+        
+        # Check if AI model is available
+        if ai_model is None:
+            print("AI model not available, using fallback analysis...")
+            return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
+        
         try:
+            # Add a timeout and error handling for the AI call
             risk_response = ai_model.generate_content(risk_analysis_prompt)
             print(f"AI response received: {len(risk_response.text)} characters")
         except Exception as e:
             print(f"Error calling AI model: {str(e)}")
+            print("Falling back to dynamic analysis...")
             # Fallback to dynamic analysis
             return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
         

@@ -58,18 +58,18 @@ The **Stack Overflow Risk Checker** is a powerful new feature that helps develop
 ## Installation
 
 ### Frontend Setup
-```bash
+   ```bash
 cd UI-main
-npm install
+   npm install
 npm run dev
-```
+   ```
 
 ### Backend Setup
-```bash
+   ```bash
 cd UI-main/backend
-pip install -r requirements.txt
+   pip install -r requirements.txt
 python main.py
-```
+   ```
 
 ### Full Stack Development
 ```bash

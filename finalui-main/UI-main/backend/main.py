@@ -262,8 +262,111 @@ def is_generic_answer(answer: str, context: str) -> bool:
     generic_count = sum(1 for phrase in generic_phrases if phrase.lower() in answer.lower())
     return generic_count >= 2
 
+def extract_code_patterns(diff_content: str) -> Dict[str, List[str]]:
+    """Extract specific code patterns from diff content for more relevant Stack Overflow links"""
+    
+    patterns = {
+        'security_issues': [],
+        'performance_issues': [],
+        'code_quality': [],
+        'framework_specific': [],
+        'testing_issues': []
+    }
+    
+    diff_lower = diff_content.lower()
+    lines = diff_content.split('\n')
+    
+    # Extract added lines (lines starting with +)
+    added_lines = [line[1:] for line in lines if line.startswith('+') and not line.startswith('+++')]
+    removed_lines = [line[1:] for line in lines if line.startswith('-') and not line.startswith('---')]
+    
+    # Security pattern detection
+    for line in added_lines + removed_lines:
+        line_lower = line.lower()
+        
+        # SQL injection patterns
+        if any(sql_pattern in line_lower for sql_pattern in ['sql', 'query', 'select', 'insert', 'update', 'delete']):
+            if 'string' in line_lower or 'concat' in line_lower or '+' in line:
+                patterns['security_issues'].append('sql-injection')
+        
+        # XSS patterns
+        if any(xss_pattern in line_lower for xss_pattern in ['innerhtml', 'document.write', 'eval', 'exec']):
+            patterns['security_issues'].append('xss-vulnerability')
+        
+        # Authentication patterns
+        if any(auth_pattern in line_lower for auth_pattern in ['password', 'token', 'jwt', 'session', 'login']):
+            patterns['security_issues'].append('authentication')
+        
+        # URL validation patterns
+        if any(url_pattern in line_lower for url_pattern in ['http://', 'https://', 'redirect', 'url']):
+            patterns['security_issues'].append('url-validation')
+    
+    # Performance pattern detection
+    for line in added_lines + removed_lines:
+        line_lower = line.lower()
+        
+        # Loop patterns
+        if any(loop_pattern in line_lower for loop_pattern in ['for(', 'while(', 'foreach', 'map(', 'filter(']):
+            patterns['performance_issues'].append('loop-optimization')
+        
+        # Memory patterns
+        if any(memory_pattern in line_lower for memory_pattern in ['memory', 'leak', 'dispose', 'finalize', 'gc']):
+            patterns['performance_issues'].append('memory-management')
+        
+        # Async patterns
+        if any(async_pattern in line_lower for async_pattern in ['async', 'await', 'promise', 'callback']):
+            patterns['performance_issues'].append('async-programming')
+    
+    # Code quality patterns
+    for line in added_lines + removed_lines:
+        line_lower = line.lower()
+        
+        # Error handling
+        if any(error_pattern in line_lower for error_pattern in ['try', 'catch', 'throw', 'exception', 'error']):
+            patterns['code_quality'].append('error-handling')
+        
+        # Null safety
+        if any(null_pattern in line_lower for null_pattern in ['null', 'undefined', 'none', 'nil']):
+            patterns['code_quality'].append('null-safety')
+        
+        # Code structure
+        if any(struct_pattern in line_lower for struct_pattern in ['function', 'method', 'class', 'interface']):
+            patterns['code_quality'].append('code-structure')
+    
+    # Framework-specific patterns
+    for line in added_lines + removed_lines:
+        line_lower = line.lower()
+        
+        # React patterns
+        if any(react_pattern in line_lower for react_pattern in ['react', 'component', 'jsx', 'props', 'state', 'useState', 'useEffect']):
+            patterns['framework_specific'].append('react-patterns')
+        
+        # Django patterns
+        if any(django_pattern in line_lower for django_pattern in ['django', 'models.py', 'views.py', 'urls.py']):
+            patterns['framework_specific'].append('django-patterns')
+        
+        # Spring patterns
+        if any(spring_pattern in line_lower for spring_pattern in ['@controller', '@service', '@repository', '@autowired']):
+            patterns['framework_specific'].append('spring-patterns')
+    
+    # Testing patterns
+    for line in added_lines + removed_lines:
+        line_lower = line.lower()
+        
+        if any(test_pattern in line_lower for test_pattern in ['test', 'unit', 'mock', 'stub', 'assert', 'expect']):
+            patterns['testing_issues'].append('unit-testing')
+    
+    # Remove duplicates
+    for category in patterns:
+        patterns[category] = list(set(patterns[category]))
+    
+    return patterns
+
 def generate_stack_overflow_links(code_content: str, language: str = "general") -> List[str]:
-    """Generate realistic Stack Overflow links based on code content and language"""
+    """Generate realistic Stack Overflow links based on specific code content and patterns"""
+    
+    # Extract specific patterns from the code content
+    extracted_patterns = extract_code_patterns(code_content)
     
     # Language-specific Stack Overflow tags and common question patterns
     language_patterns = {
@@ -304,50 +407,54 @@ def generate_stack_overflow_links(code_content: str, language: str = "general") 
         }
     }
     
-    # Detect specific patterns in the code
-    code_lower = code_content.lower()
-    detected_patterns = []
-    
-    # Security patterns
-    if any(pattern in code_lower for pattern in ['sql', 'query', 'database']):
-        detected_patterns.append('sql-injection')
-    if any(pattern in code_lower for pattern in ['password', 'auth', 'login']):
-        detected_patterns.append('authentication')
-    if any(pattern in code_lower for pattern in ['eval', 'exec', 'dynamic']):
-        detected_patterns.append('code-injection')
-    
-    # Performance patterns
-    if any(pattern in code_lower for pattern in ['loop', 'for', 'while']):
-        detected_patterns.append('performance')
-    if any(pattern in code_lower for pattern in ['memory', 'leak', 'gc']):
-        detected_patterns.append('memory-management')
-    
-    # Best practices
-    if any(pattern in code_lower for pattern in ['function', 'method', 'class']):
-        detected_patterns.append('best-practices')
-    if any(pattern in code_lower for pattern in ['error', 'exception', 'try']):
-        detected_patterns.append('error-handling')
-    
-    # Get language-specific patterns
-    lang_patterns = language_patterns.get(language, language_patterns['javascript'])
-    
-    # Generate links
+    # Generate links based on extracted patterns
     links = []
     
-    # Add language-specific links
-    for tag in lang_patterns['tags'][:2]:  # Limit to 2 tags
-        question_id = lang_patterns['question_ids'][len(links) % len(lang_patterns['question_ids'])]
-        links.append(f"https://stackoverflow.com/questions/{question_id}/{tag}-best-practices")
+    # Priority 1: Security issues (most critical)
+    for security_issue in extracted_patterns['security_issues'][:2]:
+        question_id = 40000 + len(links) * 1000
+        links.append(f"https://stackoverflow.com/questions/{question_id}/{security_issue}-{language}")
     
-    # Add pattern-specific links
-    for pattern in detected_patterns[:2]:  # Limit to 2 patterns
-        question_id = 40000 + len(links) * 1000  # Generate unique IDs
-        links.append(f"https://stackoverflow.com/questions/{question_id}/{pattern}-{language}")
+    # Priority 2: Performance issues
+    for perf_issue in extracted_patterns['performance_issues'][:1]:
+        if len(links) < 3:  # Keep space for other categories
+            question_id = 50000 + len(links) * 1000
+            links.append(f"https://stackoverflow.com/questions/{question_id}/{perf_issue}-{language}")
     
-    # Add general code review link
-    links.append("https://stackoverflow.com/questions/tagged/code-review")
+    # Priority 3: Framework-specific patterns
+    for framework_pattern in extracted_patterns['framework_specific'][:1]:
+        if len(links) < 3:
+            question_id = 60000 + len(links) * 1000
+            links.append(f"https://stackoverflow.com/questions/{question_id}/{framework_pattern}-{language}")
     
-    return links[:4]  # Return max 4 links
+    # Priority 4: Code quality issues
+    for quality_issue in extracted_patterns['code_quality'][:1]:
+        if len(links) < 3:
+            question_id = 70000 + len(links) * 1000
+            links.append(f"https://stackoverflow.com/questions/{question_id}/{quality_issue}-{language}")
+    
+    # Priority 5: Testing issues
+    for testing_issue in extracted_patterns['testing_issues'][:1]:
+        if len(links) < 3:
+            question_id = 80000 + len(links) * 1000
+            links.append(f"https://stackoverflow.com/questions/{question_id}/{testing_issue}-{language}")
+    
+    # If we don't have enough specific links, add language-specific ones
+    if len(links) < 4 and language != 'general':
+        lang_patterns = language_patterns.get(language, language_patterns['javascript'])
+        for tag in lang_patterns['tags'][:1]:
+            question_id = 90000 + len(links) * 1000
+            links.append(f"https://stackoverflow.com/questions/{question_id}/{tag}-best-practices")
+    
+    # Ensure we have exactly 4 links
+    while len(links) < 4:
+        question_id = 100000 + len(links) * 1000
+        if len(links) == 3:
+            links.append("https://stackoverflow.com/questions/tagged/code-review")
+        else:
+            links.append(f"https://stackoverflow.com/questions/{question_id}/software-engineering-best-practices")
+    
+    return links[:4]  # Return exactly 4 links
 
 # API Endpoints
 @app.get("/")
@@ -1036,7 +1143,16 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         - What specific Stack Overflow questions would be relevant
         - Concrete recommendations to fix the issue
 
-        Generate realistic Stack Overflow links based on the actual code patterns found. Use relevant tags and question IDs.
+        IMPORTANT: Generate Stack Overflow links that are SPECIFIC to the actual code patterns found:
+        - If you see SQL queries, include links about SQL injection prevention
+        - If you see authentication code, include links about secure authentication
+        - If you see async/await patterns, include links about async best practices
+        - If you see React components, include links about React patterns
+        - If you see error handling, include links about exception handling
+        - If you see loops or performance code, include links about optimization
+        - If you see framework-specific code, include links about that framework
+
+        DO NOT use generic links like "code-review" or "best-practices". Make them specific to the actual code issues found.
 
         Code Diff to Analyze:
         {safe_diff}
@@ -1052,7 +1168,10 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
                     "severity": "low|medium|high",
                     "title": "Specific issue title based on actual code",
                     "description": "Detailed explanation of the specific issue found in the code",
-                    "stack_overflow_links": ["https://stackoverflow.com/questions/RELEVANT_ID/relevant-question-title"],
+                    "stack_overflow_links": [
+                        "https://stackoverflow.com/questions/SPECIFIC_ID/specific-issue-related-to-actual-code",
+                        "https://stackoverflow.com/questions/SPECIFIC_ID2/another-specific-issue-found"
+                    ],
                     "recommendations": ["Specific actionable recommendation 1", "Specific actionable recommendation 2"]
                 }}
             ],
@@ -1064,7 +1183,7 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         If no significant risks are found, still provide a detailed analysis with:
         - At least one finding about code quality or best practices
         - Specific recommendations for improvement
-        - Relevant Stack Overflow references for the programming language/framework used
+        - Relevant Stack Overflow references for the specific code patterns found
         """
         
         print("Sending request to AI model...")

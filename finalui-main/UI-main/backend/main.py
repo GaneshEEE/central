@@ -1192,7 +1192,7 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         - If you see: `sql = "SELECT * FROM users WHERE id = " + userId` → Link: "sql-injection-string-concatenation"
         - If you see: `element.innerHTML = userInput` → Link: "xss-innerhtml-document-write"
         - If you see: `addEventListener('click', handler)` without cleanup → Link: "event-listener-memory-leak"
-        - If you see: `async function() { await apiCall() }` without try/catch → Link: "async-await-error-handling"
+        - If you see: `async function() { await someFunction() }` without try/catch → Link: "async-await-error-handling"
         - If you see: `useState()` with `useEffect()` missing dependencies → Link: "react-usestate-useeffect-dependency"
         - If you see: `for(let i=0; i<array.length; i++)` → Link: "for-loop-length-optimization"
         - If you see: `password = userInput` → Link: "password-plain-text-storage"
@@ -1235,8 +1235,13 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         """
         
         print("Sending request to AI model...")
-        risk_response = ai_model.generate_content(risk_analysis_prompt)
-        print(f"AI response received: {len(risk_response.text)} characters")
+        try:
+            risk_response = ai_model.generate_content(risk_analysis_prompt)
+            print(f"AI response received: {len(risk_response.text)} characters")
+        except Exception as e:
+            print(f"Error calling AI model: {str(e)}")
+            # Fallback to dynamic analysis
+            return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
         
         try:
             import json
@@ -1277,169 +1282,30 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
             # If no findings were generated, create a more specific analysis
             if not risk_data["risk_findings"]:
                 print("No findings in AI response, generating dynamic analysis...")
-                # Analyze the diff content to generate specific findings
-                lines_added = sum(1 for line in safe_diff.split('\n') if line.startswith('+') and not line.startswith('+++'))
-                lines_removed = sum(1 for line in safe_diff.split('\n') if line.startswith('-') and not line.startswith('---'))
-                
-                # Generate specific findings based on the actual changes
-                specific_findings = []
-                
-                if lines_added > 0:
-                    # Generate realistic Stack Overflow links based on the code content
-                    so_links = generate_stack_overflow_links(safe_diff, detected_language)
-                    
-                    specific_findings.append({
-                        "type": "best_practice",
-                        "severity": "low",
-                        "title": f"Code Addition Analysis ({lines_added} lines added)",
-                        "description": f"Added {lines_added} lines of code. Review for proper error handling, input validation, and documentation.",
-                        "stack_overflow_links": so_links,
-                        "recommendations": [
-                            "Add comprehensive error handling for new code",
-                            "Include input validation for any new parameters",
-                            "Add unit tests for the new functionality",
-                            "Check for security vulnerabilities in new code"
-                        ]
-                    })
-                
-                if lines_removed > 0:
-                    # Generate realistic Stack Overflow links for refactoring
-                    so_links = generate_stack_overflow_links(safe_diff, detected_language)
-                    
-                    specific_findings.append({
-                        "type": "warning",
-                        "severity": "medium",
-                        "title": f"Code Removal Analysis ({lines_removed} lines removed)",
-                        "description": f"Removed {lines_removed} lines of code. Ensure no critical functionality was accidentally removed.",
-                        "stack_overflow_links": so_links,
-                        "recommendations": [
-                            "Verify that removed code wasn't critical for functionality",
-                            "Check for any broken dependencies",
-                            "Update tests to reflect the removed code",
-                            "Document the reason for code removal"
-                        ]
-                    })
-                
-                # Add language-specific recommendations
-                if detected_language != 'general':
-                    # Generate language-specific Stack Overflow links
-                    so_links = generate_stack_overflow_links(safe_diff, detected_language)
-                    
-                    specific_findings.append({
-                        "type": "best_practice",
-                        "severity": "low",
-                        "title": f"{detected_language.title()} Best Practices",
-                        "description": f"Ensure the {detected_language} code follows current best practices and conventions.",
-                        "stack_overflow_links": so_links,
-                        "recommendations": [
-                            f"Follow {detected_language} naming conventions",
-                            f"Use {detected_language} linting tools",
-                            f"Apply {detected_language} design patterns where appropriate",
-                            "Consider code review by a senior developer"
-                        ]
-                    })
-                
-                risk_data["risk_findings"] = specific_findings
-                risk_data["overall_risk_score"] = min(7, max(2, (lines_added + lines_removed) // 10 + 2))
-                risk_data["risk_summary"] = f"Analysis of {lines_added} added and {lines_removed} removed lines. Review for best practices and potential issues."
-                risk_data["alternative_approaches"] = [
-                    "Consider breaking large changes into smaller, reviewable commits",
-                    "Add comprehensive testing for modified functionality",
-                    "Document the changes and their rationale",
-                    "Consider pair programming for complex modifications"
-                ]
-                print(f"Generated {len(specific_findings)} dynamic findings")
+                return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
             
-            print(f"Returning risk analysis with {len(risk_data['risk_findings'])} findings")
+            # Generate dynamic Stack Overflow links and alternative approaches
+            so_links = generate_stack_overflow_links(safe_diff, detected_language)
+            
+            # Update findings with dynamic links if they're generic
+            for finding in risk_data["risk_findings"]:
+                if not finding["stack_overflow_links"] or any("code-review" in link for link in finding["stack_overflow_links"]):
+                    finding["stack_overflow_links"] = so_links[:2]  # Use first 2 dynamic links
+            
+            # Generate dynamic alternative approaches
+            if not risk_data["alternative_approaches"] or len(risk_data["alternative_approaches"]) < 2:
+                risk_data["alternative_approaches"] = generate_dynamic_alternatives(safe_diff, detected_language)
+            
             return risk_data
             
         except json.JSONDecodeError as e:
-            # Improved fallback with dynamic analysis
-            print(f"JSON parsing failed: {e}, using fallback analysis...")
-            response_text = risk_response.text.strip()
-            
-            # Analyze the actual diff content for dynamic findings
-            lines_added = sum(1 for line in safe_diff.split('\n') if line.startswith('+') and not line.startswith('+++'))
-            lines_removed = sum(1 for line in safe_diff.split('\n') if line.startswith('-') and not line.startswith('---'))
-            
-            # Extract risk score from response or calculate based on changes
-            risk_score_match = re.search(r'risk_score["\s]*:?\s*(\d+)', response_text, re.IGNORECASE)
-            overall_risk_score = int(risk_score_match.group(1)) if risk_score_match else min(8, max(2, (lines_added + lines_removed) // 5 + 2))
-            
-            # Extract risk summary from response or generate based on changes
-            summary_match = re.search(r'risk_summary["\s]*:?\s*["\']([^"\']+)["\']', response_text, re.IGNORECASE)
-            risk_summary = summary_match.group(1) if summary_match else f"Analysis of {lines_added} added and {lines_removed} removed lines. Review changes for potential issues and best practices."
-            
-            # Generate dynamic findings based on actual code changes
-            dynamic_findings = []
-            
-            if lines_added > 0:
-                # Generate realistic Stack Overflow links based on the code content
-                so_links = generate_stack_overflow_links(safe_diff, detected_language)
-                
-                dynamic_findings.append({
-                    "type": "best_practice",
-                    "severity": "medium",
-                    "title": f"Code Addition Review Required ({lines_added} lines)",
-                    "description": f"Added {lines_added} lines of code. This requires thorough review for proper implementation, error handling, and adherence to coding standards.",
-                    "stack_overflow_links": so_links,
-                    "recommendations": [
-                        "Review the new code for proper error handling",
-                        "Ensure input validation is implemented",
-                        "Add unit tests for new functionality",
-                        "Check for security vulnerabilities in new code"
-                    ]
-                })
-            
-            if lines_removed > 0:
-                # Generate realistic Stack Overflow links for refactoring
-                so_links = generate_stack_overflow_links(safe_diff, detected_language)
-                
-                dynamic_findings.append({
-                    "type": "warning",
-                    "severity": "medium",
-                    "title": f"Code Removal Verification ({lines_removed} lines)",
-                    "description": f"Removed {lines_removed} lines of code. Verify that no critical functionality was accidentally removed and that all dependencies are properly updated.",
-                    "stack_overflow_links": so_links,
-                    "recommendations": [
-                        "Verify removed code wasn't critical for functionality",
-                        "Check for any broken dependencies",
-                        "Update tests to reflect code removal",
-                        "Document the reason for code removal"
-                    ]
-                })
-            
-            # Add general code quality finding
-            # Generate realistic Stack Overflow links for code quality
-            so_links = generate_stack_overflow_links(safe_diff, detected_language)
-            
-            dynamic_findings.append({
-                "type": "best_practice",
-                "severity": "low",
-                "title": "Code Quality Assessment",
-                "description": "Review the overall code quality, readability, and maintainability of the changes.",
-                "stack_overflow_links": so_links,
-                "recommendations": [
-                    "Ensure code follows team coding standards",
-                    "Add appropriate comments and documentation",
-                    "Consider code complexity and readability",
-                    "Review for potential performance implications"
-                ]
-            })
-            
-            print(f"Generated {len(dynamic_findings)} fallback findings")
-            return {
-                "risk_findings": dynamic_findings,
-                "overall_risk_score": overall_risk_score,
-                "risk_summary": risk_summary,
-                "alternative_approaches": [
-                    "Consider implementing code review process",
-                    "Add automated testing for the changes",
-                    "Use static analysis tools to catch issues early",
-                    "Document the changes and their rationale"
-                ]
-            }
-        
+            print(f"JSON parsing error: {str(e)}")
+            print(f"Response text: {response_text[:500]}...")
+            return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
+        except Exception as e:
+            print(f"Error processing AI response: {str(e)}")
+            return await generate_fallback_analysis(safe_diff, detected_language, code_changes)
+    
     except Exception as e:
         print(f"Stack Overflow Risk Checker error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -2103,6 +1969,146 @@ def get_actual_api_key_from_identifier(identifier: str) -> str:
     fallback = os.getenv('GENAI_API_KEY_1')
     print(f"Falling back to GENAI_API_KEY_1, value: {fallback}")
     return fallback
+
+def generate_dynamic_alternatives(diff_content: str, language: str) -> List[str]:
+    """Generate dynamic alternative approaches based on the code content"""
+    alternatives = []
+    
+    # Analyze the diff content for specific patterns
+    patterns = extract_code_patterns(diff_content)
+    
+    # Generate alternatives based on detected patterns
+    if patterns['security_issues']:
+        alternatives.append("Implement input validation and sanitization for all user inputs")
+        alternatives.append("Use parameterized queries instead of string concatenation for database operations")
+    
+    if patterns['performance_issues']:
+        alternatives.append("Consider using more efficient data structures and algorithms")
+        alternatives.append("Implement proper cleanup for event listeners and timers")
+    
+    if patterns['code_quality']:
+        alternatives.append("Add comprehensive error handling with try-catch blocks")
+        alternatives.append("Implement proper null checking and defensive programming")
+    
+    if patterns['framework_specific']:
+        if any('react' in pattern for pattern in patterns['framework_specific']):
+            alternatives.append("Use React hooks properly with dependency arrays")
+            alternatives.append("Implement proper component optimization with React.memo")
+        elif any('django' in pattern for pattern in patterns['framework_specific']):
+            alternatives.append("Use Django forms for input validation")
+            alternatives.append("Implement proper model validation and constraints")
+        elif any('spring' in pattern for pattern in patterns['framework_specific']):
+            alternatives.append("Use Spring annotations for proper dependency injection")
+            alternatives.append("Implement proper exception handling with @ControllerAdvice")
+    
+    # Add language-specific alternatives
+    if language == 'javascript':
+        alternatives.append("Use async/await with proper error handling")
+        alternatives.append("Implement proper memory management for event listeners")
+    elif language == 'python':
+        alternatives.append("Use context managers for resource management")
+        alternatives.append("Implement proper exception handling with specific exception types")
+    elif language == 'java':
+        alternatives.append("Use Java streams for functional programming")
+        alternatives.append("Implement proper resource management with try-with-resources")
+    
+    # Ensure we have at least 3 alternatives
+    while len(alternatives) < 3:
+        alternatives.append("Follow language-specific best practices and coding standards")
+    
+    return alternatives[:3]
+
+async def generate_fallback_analysis(diff_content: str, language: str, code_changes: str = None) -> Dict:
+    """Generate fallback analysis when AI response fails"""
+    print("Generating fallback analysis...")
+    
+    # Analyze the diff content
+    lines_added = sum(1 for line in diff_content.split('\n') if line.startswith('+') and not line.startswith('+++'))
+    lines_removed = sum(1 for line in diff_content.split('\n') if line.startswith('-') and not line.startswith('---'))
+    
+    # Extract patterns for specific analysis
+    patterns = extract_code_patterns(diff_content)
+    
+    # Generate Stack Overflow links
+    so_links = generate_stack_overflow_links(diff_content, language)
+    
+    # Generate alternative approaches
+    alternatives = generate_dynamic_alternatives(diff_content, language)
+    
+    # Calculate risk score based on patterns
+    risk_score = 5  # Default medium risk
+    if patterns['security_issues']:
+        risk_score += 3
+    if patterns['performance_issues']:
+        risk_score += 2
+    if patterns['code_quality']:
+        risk_score += 1
+    
+    risk_score = min(risk_score, 10)  # Cap at 10
+    
+    # Generate findings based on patterns
+    findings = []
+    
+    if patterns['security_issues']:
+        findings.append({
+            "type": "security",
+            "severity": "high",
+            "title": "Security vulnerabilities detected",
+            "description": f"Found {len(patterns['security_issues'])} potential security issues in the code changes",
+            "stack_overflow_links": so_links[:2],
+            "recommendations": [
+                "Review all user input handling for security vulnerabilities",
+                "Implement proper authentication and authorization checks"
+            ]
+        })
+    
+    if patterns['performance_issues']:
+        findings.append({
+            "type": "warning",
+            "severity": "medium",
+            "title": "Performance concerns identified",
+            "description": f"Found {len(patterns['performance_issues'])} potential performance issues",
+            "stack_overflow_links": so_links[2:4] if len(so_links) >= 4 else so_links,
+            "recommendations": [
+                "Optimize loops and data structures",
+                "Implement proper resource cleanup"
+            ]
+        })
+    
+    if patterns['code_quality']:
+        findings.append({
+            "type": "best_practice",
+            "severity": "low",
+            "title": "Code quality improvements suggested",
+            "description": f"Found {len(patterns['code_quality'])} areas for code quality improvement",
+            "stack_overflow_links": so_links[:2],
+            "recommendations": [
+                "Add comprehensive error handling",
+                "Implement proper null checking and validation"
+            ]
+        })
+    
+    # If no specific findings, create a general one
+    if not findings:
+        findings.append({
+            "type": "best_practice",
+            "severity": "low",
+            "title": f"Code change analysis ({lines_added} added, {lines_removed} removed)",
+            "description": f"Analyzed {lines_added} lines added and {lines_removed} lines removed. Review for best practices.",
+            "stack_overflow_links": so_links,
+            "recommendations": [
+                "Add comprehensive error handling for new code",
+                "Include input validation for any new parameters",
+                "Add unit tests for the new functionality"
+            ]
+        })
+    
+    return {
+        "risk_findings": findings,
+        "overall_risk_score": risk_score,
+        "risk_summary": f"Analysis of {lines_added} lines added and {lines_removed} lines removed. Risk score: {risk_score}/10.",
+        "alternative_approaches": alternatives
+    }
 
 if __name__ == "__main__":
     import uvicorn

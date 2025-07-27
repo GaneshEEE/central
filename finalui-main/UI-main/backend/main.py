@@ -286,6 +286,29 @@ def extract_code_patterns(diff_content: str) -> Dict[str, List[str]]:
         line_lower = line.lower()
         line_stripped = line.strip()
         
+        # Math and calculation patterns
+        if 'math.log(' in line_lower and 'try' not in line_lower:
+            patterns['code_quality'].append('math-log-error-handling')
+            patterns['specific_patterns'].append('math-log-error-handling')
+        
+        if 'math.log(' in line_lower and 'base' not in line_lower:
+            patterns['code_quality'].append('math-log-base-specification')
+            patterns['specific_patterns'].append('math-log-base-specification')
+        
+        if 'import math' not in diff_lower and 'math.' in line_lower:
+            patterns['code_quality'].append('missing-math-import')
+            patterns['specific_patterns'].append('missing-math-import')
+        
+        # Documentation patterns
+        if 'def ' in line_lower and '"""' not in diff_lower and "'''" not in diff_lower:
+            patterns['code_quality'].append('missing-docstrings')
+            patterns['specific_patterns'].append('missing-docstrings')
+        
+        # Method definition patterns
+        if 'def log(' in line_lower or 'def clear(' in line_lower:
+            patterns['code_quality'].append('method-documentation')
+            patterns['specific_patterns'].append('method-documentation')
+        
         # SQL injection - very specific patterns
         if 'sql' in line_lower and ('+' in line or 'concat' in line_lower or 'string' in line_lower):
             patterns['security_issues'].append('sql-injection-string-concatenation')
@@ -531,6 +554,26 @@ def generate_stack_overflow_links(code_content: str, language: str = "general") 
             'mock-without-verification': {
                 'title': 'how-to-verify-mock-calls-in-unit-tests',
                 'tags': f'{language},unit-testing,mocking,verification'
+            },
+            'math-log-error-handling': {
+                'title': 'how-to-handle-math-log-errors-properly',
+                'tags': f'{language},math-log,error-handling,best-practices'
+            },
+            'math-log-base-specification': {
+                'title': 'how-to-specify-math-log-base-properly',
+                'tags': f'{language},math-log,base-specification,best-practices'
+            },
+            'missing-math-import': {
+                'title': 'how-to-import-math-module-properly',
+                'tags': f'{language},math-import,best-practices'
+            },
+            'missing-docstrings': {
+                'title': 'how-to-add-docstrings-to-methods-properly',
+                'tags': f'{language},docstrings,best-practices'
+            },
+            'method-documentation': {
+                'title': 'how-to-document-methods-properly',
+                'tags': f'{language},method-documentation,best-practices'
             }
         }
         
@@ -1309,6 +1352,11 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
         3. Performance issues or anti-patterns
         4. Best practice violations
         5. Potential breaking changes
+        6. Missing error handling (especially for math operations, file operations, API calls)
+        7. Missing imports or dependencies
+        8. Missing documentation (docstrings, comments)
+        9. Incorrect parameter usage (e.g., math.log without proper base specification)
+        10. Code quality issues (naming conventions, structure, etc.)
 
         For each finding, provide specific details about:
         - The exact line or pattern that's problematic
@@ -1347,8 +1395,7 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
                     "title": "Specific issue title based on exact code pattern",
                     "description": "Detailed explanation of the exact issue found in the code",
                     "stack_overflow_links": [
-                        "https://stackoverflow.com/questions/SPECIFIC_ID/exact-pattern-name-found-in-code",
-                        "https://stackoverflow.com/questions/SPECIFIC_ID2/another-exact-pattern-found"
+                        "USE_PATTERN_BASED_LINKS_ONLY"
                     ],
                     "recommendations": ["Specific actionable recommendation 1", "Specific actionable recommendation 2"]
                 }}
@@ -1357,6 +1404,8 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
             "risk_summary": "2-3 sentence summary of the specific risks found in this code",
             "alternative_approaches": ["Specific alternative approach 1", "Specific alternative approach 2", "Specific alternative approach 3"]
         }}
+
+        IMPORTANT: For stack_overflow_links, use "USE_PATTERN_BASED_LINKS_ONLY" as a placeholder. The system will automatically replace this with specific, relevant Stack Overflow links based on the exact code patterns found.
 
         If no significant risks are found, still provide a detailed analysis with:
         - At least one finding about code quality or best practices
@@ -1428,6 +1477,9 @@ async def stack_overflow_risk_checker(request: StackOverflowRiskRequest, req: Re
             # Update findings with dynamic links if they're generic
             for finding in risk_data["risk_findings"]:
                 if not finding["stack_overflow_links"] or any("code-review" in link for link in finding["stack_overflow_links"]):
+                    finding["stack_overflow_links"] = so_links[:2]  # Use first 2 dynamic links
+                # Replace placeholder with actual pattern-based links
+                if "USE_PATTERN_BASED_LINKS_ONLY" in finding["stack_overflow_links"]:
                     finding["stack_overflow_links"] = so_links[:2]  # Use first 2 dynamic links
             
             # Generate dynamic alternative approaches
